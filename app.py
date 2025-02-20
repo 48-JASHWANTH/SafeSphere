@@ -29,6 +29,12 @@ import os
 import requests
 import time as time_module
 from risk_analyzer import RiskAnalyzer
+import sys
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -74,27 +80,32 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session states
-if 'help_requests' not in st.session_state:
-    st.session_state.help_requests = load_help_requests()
-if 'alerts' not in st.session_state:
-    st.session_state.alerts = []
-if 'risk_level' not in st.session_state:
-    st.session_state.risk_level = 'low'
-if 'user_location' not in st.session_state:
-    st.session_state.user_location = None
-if 'selected_destination' not in st.session_state:
-    st.session_state.selected_destination = None
-if 'route_info' not in st.session_state:
-    st.session_state.route_info = None
-if 'location_history' not in st.session_state:
-    st.session_state.location_history = []
-if 'last_location_check' not in st.session_state:
-    st.session_state.last_location_check = 0
-if 'location_update_interval' not in st.session_state:
-    st.session_state.location_update_interval = 30  # seconds
-if 'risk_analyzer' not in st.session_state:
-    st.session_state.risk_analyzer = RiskAnalyzer()
+# Initialize session states at the start
+def init_session_state():
+    """Initialize all session state variables"""
+    if 'help_requests' not in st.session_state:
+        st.session_state.help_requests = load_help_requests()
+    if 'alerts' not in st.session_state:
+        st.session_state.alerts = []
+    if 'risk_level' not in st.session_state:
+        st.session_state.risk_level = 'low'
+    if 'user_location' not in st.session_state:
+        st.session_state.user_location = get_location()  # Get initial location
+    if 'selected_destination' not in st.session_state:
+        st.session_state.selected_destination = None
+    if 'route_info' not in st.session_state:
+        st.session_state.route_info = None
+    if 'location_history' not in st.session_state:
+        st.session_state.location_history = []
+    if 'last_location_check' not in st.session_state:
+        st.session_state.last_location_check = 0
+    if 'location_update_interval' not in st.session_state:
+        st.session_state.location_update_interval = 30
+    if 'risk_analyzer' not in st.session_state:
+        st.session_state.risk_analyzer = RiskAnalyzer()
+
+# Initialize session state
+init_session_state()
 
 def get_location():
     """Get user location using IP-based geolocation"""
@@ -304,6 +315,24 @@ def format_route_step(step, index):
 
 def main():
     try:
+        # Ensure user location is available
+        if not st.session_state.user_location:
+            st.error("Unable to determine location. Please enable location services or enter location manually.")
+            # Show manual location input
+            with st.expander("Enter Location Manually"):
+                lat = st.number_input("Latitude", value=40.7128)
+                lng = st.number_input("Longitude", value=-74.0060)
+                if st.button("Set Location"):
+                    st.session_state.user_location = {
+                        'lat': lat,
+                        'lng': lng,
+                        'city': 'Unknown',
+                        'region': 'Unknown',
+                        'country': 'Unknown'
+                    }
+                    st.rerun()
+            return
+
         # Sidebar
         st.sidebar.title("🚨 Emergency Dashboard")
         
@@ -580,8 +609,10 @@ def main():
                     st.write(f"Status: {request['status']}")
 
     except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
-        st.error("Please refresh the page and try again.")
+        logger.error(f"Application error: {str(e)}", exc_info=True)
+        st.error("An error occurred. Please try refreshing the page.")
+        if st.button("Refresh App"):
+            st.rerun()
 
 if __name__ == "__main__":
     main() 

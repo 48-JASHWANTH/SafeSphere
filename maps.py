@@ -165,6 +165,14 @@ def get_weather(location):
     """
     try:
         api_key = os.getenv('OPENWEATHER_API_KEY')
+        if not api_key:
+            return {
+                'temperature': 20,
+                'humidity': 65,
+                'description': 'weather data unavailable',
+                'wind_speed': 0
+            }
+            
         url = f"http://api.openweathermap.org/data/2.5/weather?lat={location['lat']}&lon={location['lng']}&appid={api_key}&units=metric"
         
         response = requests.get(url)
@@ -177,8 +185,13 @@ def get_weather(location):
                 'wind_speed': data['wind']['speed']
             }
     except Exception as e:
-        st.error(f"Error fetching weather data: {str(e)}")
-    return None
+        st.warning(f"Weather data temporarily unavailable: {str(e)}")
+        return {
+            'temperature': 20,
+            'humidity': 65,
+            'description': 'weather data unavailable',
+            'wind_speed': 0
+        }
 
 def get_precise_location():
     """
