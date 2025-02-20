@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime, timedelta
-import random
+from groq_api import get_risk_data
 
 def load_help_requests():
     """
@@ -35,18 +35,26 @@ def generate_heatmap_data(location):
         list: List of [lat, lng, intensity] points for heatmap
     """
     try:
-        # Generate simulated risk data points around the location
-        risk_data = []
-        base_lat, base_lng = location['lat'], location['lng']
+        # Get risk data points from groq_api
+        risk_data = get_risk_data(location)
         
-        # Create a grid of points around the location
-        for i in range(-5, 6):
-            for j in range(-5, 6):
-                lat = base_lat + (i * 0.002)
-                lng = base_lng + (j * 0.002)
-                # Random risk intensity between 0 and 1
-                intensity = random.uniform(0, 1)
-                risk_data.append([lat, lng, intensity])
+        # If no risk data is available, generate a simple circular pattern
+        if not risk_data:
+            base_lat, base_lng = location['lat'], location['lng']
+            risk_data = [
+                # Center point (high intensity)
+                [base_lat, base_lng, 1.0],
+                # Surrounding points (medium intensity)
+                [base_lat + 0.01, base_lng, 0.7],
+                [base_lat - 0.01, base_lng, 0.7],
+                [base_lat, base_lng + 0.01, 0.7],
+                [base_lat, base_lng - 0.01, 0.7],
+                # Corner points (low intensity)
+                [base_lat + 0.01, base_lng + 0.01, 0.4],
+                [base_lat + 0.01, base_lng - 0.01, 0.4],
+                [base_lat - 0.01, base_lng + 0.01, 0.4],
+                [base_lat - 0.01, base_lng - 0.01, 0.4],
+            ]
         
         return risk_data
 

@@ -1,82 +1,37 @@
-import os
-import sys
-import logging
-import json
-import time as time_module
-from datetime import datetime, time
-from dotenv import load_dotenv
-
-# Load environment variables first
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Import streamlit and related packages
 import streamlit as st
-import folium
-from folium import plugins
-from streamlit_folium import folium_static
-import pandas as pd
-import requests
-
-# Set page config before any other st commands
+# Set page config first, before any other st commands
 st.set_page_config(
-    page_title="SafetyGuard Pro",
-    page_icon="🛡️",
+    page_title="SafeSphere - AI-Powered Disaster Alert System",
+    page_icon="🚨",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Import local modules
+import folium
+from folium import plugins
+from streamlit_folium import folium_static
+from datetime import datetime, time
+import pandas as pd
+from groq_api import get_disaster_alerts, analyze_risk_level, get_risk_insights
+from maps import (
+    get_nearby_support_locations, 
+    get_weather, 
+    get_route_to_location,
+    get_risk_zones,
+    get_precise_location,
+    track_location_changes,
+    calculate_movement_metrics
+)
 from utils import load_help_requests, save_help_request, generate_heatmap_data
+import json
+from dotenv import load_dotenv
+import os
+import requests
+import time as time_module
 from risk_analyzer import RiskAnalyzer
-from constants import DEFAULT_LAT, DEFAULT_LNG, EMERGENCY_TYPES
-from maps_utils import get_nearby_support_locations, get_weather
-from alerts import get_disaster_alerts, analyze_risk_level
-from route_utils import create_route_map, format_route_step
 
-def get_location():
-    """Get user location using IP-based geolocation"""
-    try:
-        response = requests.get('https://ipapi.co/json/', timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                'lat': float(data['latitude']),
-                'lng': float(data['longitude']),
-                'city': data.get('city', 'Unknown'),
-                'region': data.get('region', 'Unknown'),
-                'country': data.get('country_name', 'Unknown')
-            }
-    except Exception as e:
-        logger.warning(f"Could not get location: {e}")
-        return {
-            'lat': DEFAULT_LAT,
-            'lng': DEFAULT_LNG,
-            'city': 'New York',
-            'region': 'New York',
-            'country': 'United States'
-        }
-
-def init_session_state():
-    """Initialize session state variables"""
-    if 'initialized' not in st.session_state:
-        st.session_state.initialized = True
-        st.session_state.help_requests = load_help_requests()
-        st.session_state.alerts = []
-        st.session_state.risk_level = 'low'
-        st.session_state.user_location = get_location()
-        st.session_state.selected_destination = None
-        st.session_state.route_info = None
-        st.session_state.location_history = []
-        st.session_state.last_location_check = 0
-        st.session_state.location_update_interval = 30
-        st.session_state.risk_analyzer = RiskAnalyzer()
-
-# Initialize session state
-init_session_state()
+# Load environment variables
+load_dotenv()
 
 # CSS styling
 st.markdown("""
@@ -119,6 +74,45 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Initialize session states
+if 'help_requests' not in st.session_state:
+    st.session_state.help_requests = load_help_requests()
+if 'alerts' not in st.session_state:
+    st.session_state.alerts = []
+if 'risk_level' not in st.session_state:
+    st.session_state.risk_level = 'low'
+if 'user_location' not in st.session_state:
+    st.session_state.user_location = None
+if 'selected_destination' not in st.session_state:
+    st.session_state.selected_destination = None
+if 'route_info' not in st.session_state:
+    st.session_state.route_info = None
+if 'location_history' not in st.session_state:
+    st.session_state.location_history = []
+if 'last_location_check' not in st.session_state:
+    st.session_state.last_location_check = 0
+if 'location_update_interval' not in st.session_state:
+    st.session_state.location_update_interval = 30  # seconds
+if 'risk_analyzer' not in st.session_state:
+    st.session_state.risk_analyzer = RiskAnalyzer()
+
+def get_location():
+    """Get user location using IP-based geolocation"""
+    try:
+        response = requests.get('https://ipapi.co/json/')
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                'lat': float(data['latitude']),
+                'lng': float(data['longitude']),
+                'city': data.get('city', 'Unknown'),
+                'region': data.get('region', 'Unknown'),
+                'country': data.get('country_name', 'Unknown')
+            }
+    except Exception as e:
+        st.error(f"Error getting location: {str(e)}")
+    return None
+
 def send_notification(message):
     """Simplified notification function using Streamlit toast"""
     st.toast(message)
@@ -142,6 +136,50 @@ def create_risk_heatmap(location, risk_data):
     except Exception as e:
         st.error(f"Error creating heatmap: {str(e)}")
         return folium.Map(location=[location['lat'], location['lng']], zoom_start=13)
+
+def create_route_map(user_location, destination, route_info):
+    """Create a map with route visualization"""
+    m = folium.Map(
+        location=[user_location['lat'], user_location['lng']],
+        zoom_start=13
+    )
+    
+    # Add user marker
+    folium.Marker(
+        [user_location['lat'], user_location['lng']],
+        popup="Your Location",
+        icon=folium.Icon(color='red', icon='info-sign', prefix='fa')
+    ).add_to(m)
+    
+    # Add destination marker
+    folium.Marker(
+        [destination['lat'], destination['lng']],
+        popup=f"Destination: {destination['name']}",
+        icon=folium.Icon(color='green', icon='flag', prefix='fa')
+    ).add_to(m)
+    
+    # Add route polyline if coordinates are provided
+    if route_info and 'coordinates' in route_info:
+        folium.PolyLine(
+            route_info['coordinates'],
+            weight=3,
+            color='blue',
+            opacity=0.8
+        ).add_to(m)
+        
+        # Add risk zones along route
+        risk_zones = get_risk_zones(route_info['coordinates'])
+        for zone in risk_zones:
+            color = 'red' if zone['risk_level'] == 'high' else 'orange'
+            folium.Circle(
+                location=[zone['lat'], zone['lng']],
+                radius=100,
+                color=color,
+                fill=True,
+                popup=f"Risk Zone: {zone['description']}"
+            ).add_to(m)
+    
+    return m
 
 def display_risk_insights(location):
     """Display detailed risk insights"""
@@ -266,24 +304,6 @@ def format_route_step(step, index):
 
 def main():
     try:
-        # Ensure user location is available
-        if not st.session_state.user_location:
-            st.error("Unable to determine location. Please enable location services or enter location manually.")
-            # Show manual location input
-            with st.expander("Enter Location Manually"):
-                lat = st.number_input("Latitude", value=40.7128)
-                lng = st.number_input("Longitude", value=-74.0060)
-                if st.button("Set Location"):
-                    st.session_state.user_location = {
-                        'lat': lat,
-                        'lng': lng,
-                        'city': 'Unknown',
-                        'region': 'Unknown',
-                        'country': 'Unknown'
-                    }
-                    st.rerun()
-            return
-
         # Sidebar
         st.sidebar.title("🚨 Emergency Dashboard")
         
@@ -319,15 +339,15 @@ def main():
             new_lat = st.number_input("Latitude", value=current_location['lat'], format="%.6f")
             new_lng = st.number_input("Longitude", value=current_location['lng'], format="%.6f")
             if st.button("Update Location"):
-                st.session_state.user_location = {
-                    'lat': new_lat,
-                    'lng': new_lng,
+            st.session_state.user_location = {
+                'lat': new_lat,
+                'lng': new_lng,
                     'city': current_location['city'],
                     'region': current_location['region'],
                     'country': current_location['country'],
                     'timestamp': time_module.time()
-                }
-                st.rerun()
+            }
+            st.rerun()
 
         # Display weather information
         weather = get_weather(current_location)
@@ -560,10 +580,8 @@ def main():
                     st.write(f"Status: {request['status']}")
 
     except Exception as e:
-        logger.error(f"Application error: {str(e)}", exc_info=True)
-        st.error("An error occurred. Please try refreshing the page.")
-        if st.button("Refresh App"):
-            st.rerun()
+        st.error(f"An error occurred: {str(e)}")
+        st.error("Please refresh the page and try again.")
 
 if __name__ == "__main__":
     main() 
