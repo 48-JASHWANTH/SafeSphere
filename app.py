@@ -1,18 +1,33 @@
 import streamlit as st
-# Set page config first, before any other st commands
-st.set_page_config(
-    page_title="SafeSphere - AI-Powered Disaster Alert System",
-    page_icon="🚨",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 import folium
 from folium import plugins
 from streamlit_folium import folium_static
 from datetime import datetime, time
 import pandas as pd
-from groq_api import get_disaster_alerts, analyze_risk_level, get_risk_insights
+import json
+from dotenv import load_dotenv
+import os
+import requests
+import time as time_module
+import logging
+import sys
+
+# Load environment variables first
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Set page config before any other st commands
+st.set_page_config(
+    page_title="SafetyGuard Pro",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Import local modules after environment is set up
 from maps import (
     get_nearby_support_locations, 
     get_weather, 
@@ -20,24 +35,38 @@ from maps import (
     get_risk_zones,
     get_precise_location,
     track_location_changes,
-    calculate_movement_metrics
+    calculate_movement_metrics,
+    get_location
 )
 from utils import load_help_requests, save_help_request, generate_heatmap_data
-import json
-from dotenv import load_dotenv
-import os
-import requests
-import time as time_module
 from risk_analyzer import RiskAnalyzer
-import sys
-import logging
+from groq_api import get_disaster_alerts, analyze_risk_level, get_risk_insights
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Initialize session state
+def init_session_state():
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = True
+        st.session_state.help_requests = load_help_requests()
+        st.session_state.alerts = []
+        st.session_state.risk_level = 'low'
+        st.session_state.user_location = None
+        st.session_state.selected_destination = None
+        st.session_state.route_info = None
+        st.session_state.location_history = []
+        st.session_state.last_location_check = 0
+        st.session_state.location_update_interval = 30
+        st.session_state.risk_analyzer = RiskAnalyzer()
+        
+        # Try to get initial location
+        try:
+            initial_location = get_location()
+            if initial_location:
+                st.session_state.user_location = initial_location
+        except Exception as e:
+            logger.warning(f"Could not get initial location: {e}")
 
-# Load environment variables
-load_dotenv()
+# Initialize session state
+init_session_state()
 
 # CSS styling
 st.markdown("""
@@ -79,50 +108,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# Initialize session states at the start
-def init_session_state():
-    """Initialize all session state variables"""
-    if 'help_requests' not in st.session_state:
-        st.session_state.help_requests = load_help_requests()
-    if 'alerts' not in st.session_state:
-        st.session_state.alerts = []
-    if 'risk_level' not in st.session_state:
-        st.session_state.risk_level = 'low'
-    if 'user_location' not in st.session_state:
-        st.session_state.user_location = get_location()  # Get initial location
-    if 'selected_destination' not in st.session_state:
-        st.session_state.selected_destination = None
-    if 'route_info' not in st.session_state:
-        st.session_state.route_info = None
-    if 'location_history' not in st.session_state:
-        st.session_state.location_history = []
-    if 'last_location_check' not in st.session_state:
-        st.session_state.last_location_check = 0
-    if 'location_update_interval' not in st.session_state:
-        st.session_state.location_update_interval = 30
-    if 'risk_analyzer' not in st.session_state:
-        st.session_state.risk_analyzer = RiskAnalyzer()
-
-# Initialize session state
-init_session_state()
-
-def get_location():
-    """Get user location using IP-based geolocation"""
-    try:
-        response = requests.get('https://ipapi.co/json/')
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                'lat': float(data['latitude']),
-                'lng': float(data['longitude']),
-                'city': data.get('city', 'Unknown'),
-                'region': data.get('region', 'Unknown'),
-                'country': data.get('country_name', 'Unknown')
-            }
-    except Exception as e:
-        st.error(f"Error getting location: {str(e)}")
-    return None
 
 def send_notification(message):
     """Simplified notification function using Streamlit toast"""

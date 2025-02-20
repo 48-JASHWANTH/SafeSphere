@@ -1,4 +1,4 @@
-streamlit==1.32.0
+streamlit>=1.32.0
 folium==0.15.1
 streamlit-folium==0.18.0
 pandas>=2.0.0
@@ -7,9 +7,7 @@ python-dotenv==1.0.1
 geopy>=2.4.1
 googlemaps==4.10.0
 polyline==2.0.2
-firebase-admin==6.5.0
 plotly==5.19.0
 branca==0.7.1
 numpy>=1.24.0
-vaderSentiment==3.3.2
-watchdog==2.3.1 
+vaderSentiment==3.3.2 

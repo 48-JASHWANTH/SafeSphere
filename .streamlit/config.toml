@@ -2,6 +2,7 @@
 maxUploadSize = 200
 enableXsrfProtection = true
 enableCORS = false
+maxMessageSize = 200
 
 [browser]
 gatherUsageStats = false
@@ -14,4 +15,12 @@ textColor = "#262730"
 font = "sans serif"
 
 [logger]
-level = "info" 
+level = "info"
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = false
+
+[runner]
+magicEnabled = true
+fastReruns = true 
