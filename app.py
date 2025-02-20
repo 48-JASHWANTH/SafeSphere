@@ -35,6 +35,7 @@ from risk_analyzer import RiskAnalyzer
 from constants import DEFAULT_LAT, DEFAULT_LNG, EMERGENCY_TYPES
 from maps_utils import get_nearby_support_locations, get_weather
 from alerts import get_disaster_alerts, analyze_risk_level
+from route_utils import create_route_map, format_route_step
 
 def get_location():
     """Get user location using IP-based geolocation"""
@@ -141,50 +142,6 @@ def create_risk_heatmap(location, risk_data):
     except Exception as e:
         st.error(f"Error creating heatmap: {str(e)}")
         return folium.Map(location=[location['lat'], location['lng']], zoom_start=13)
-
-def create_route_map(user_location, destination, route_info):
-    """Create a map with route visualization"""
-    m = folium.Map(
-        location=[user_location['lat'], user_location['lng']],
-        zoom_start=13
-    )
-    
-    # Add user marker
-    folium.Marker(
-        [user_location['lat'], user_location['lng']],
-        popup="Your Location",
-        icon=folium.Icon(color='red', icon='info-sign', prefix='fa')
-    ).add_to(m)
-    
-    # Add destination marker
-    folium.Marker(
-        [destination['lat'], destination['lng']],
-        popup=f"Destination: {destination['name']}",
-        icon=folium.Icon(color='green', icon='flag', prefix='fa')
-    ).add_to(m)
-    
-    # Add route polyline if coordinates are provided
-    if route_info and 'coordinates' in route_info:
-        folium.PolyLine(
-            route_info['coordinates'],
-            weight=3,
-            color='blue',
-            opacity=0.8
-        ).add_to(m)
-        
-        # Add risk zones along route
-        risk_zones = get_risk_zones(route_info['coordinates'])
-        for zone in risk_zones:
-            color = 'red' if zone['risk_level'] == 'high' else 'orange'
-            folium.Circle(
-                location=[zone['lat'], zone['lng']],
-                radius=100,
-                color=color,
-                fill=True,
-                popup=f"Risk Zone: {zone['description']}"
-            ).add_to(m)
-    
-    return m
 
 def display_risk_insights(location):
     """Display detailed risk insights"""
