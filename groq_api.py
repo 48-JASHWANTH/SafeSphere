@@ -1,11 +1,10 @@
 import os
-from groq import Groq
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import streamlit as st
 import random
 from datetime import datetime
 
-client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+# Remove Groq client initialization
 analyzer = SentimentIntensityAnalyzer()
 
 def get_disaster_alerts(location):
