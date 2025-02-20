@@ -28,6 +28,7 @@ from dotenv import load_dotenv
 import os
 import requests
 import time as time_module
+from risk_analyzer import RiskAnalyzer
 
 # Load environment variables
 load_dotenv()
@@ -92,6 +93,8 @@ if 'last_location_check' not in st.session_state:
     st.session_state.last_location_check = 0
 if 'location_update_interval' not in st.session_state:
     st.session_state.location_update_interval = 30  # seconds
+if 'risk_analyzer' not in st.session_state:
+    st.session_state.risk_analyzer = RiskAnalyzer()
 
 def get_location():
     """Get user location using IP-based geolocation"""
@@ -178,46 +181,6 @@ def create_route_map(user_location, destination, route_info):
     
     return m
 
-def format_route_step(step_number, step):
-    """Format route step with icons and clear instructions"""
-    # Define direction icons
-    direction_icons = {
-        'left': '↰',
-        'right': '↱',
-        'slight left': '↖️',
-        'slight right': '↗️',
-        'sharp left': '⬉',
-        'sharp right': '⬈',
-        'straight': '⬆️',
-        'merge': '↱',
-        'roundabout': '⟳',
-        'uturn': '⮐',
-        'destination': '📍',
-        'start': '🚩'
-    }
-    
-    # Clean up instruction text
-    instruction = step['instruction'].replace('<b>', '**').replace('</b>', '**')
-    instruction = instruction.replace('<div style="font-size:0.9em">', '\n  ').replace('</div>', '')
-    
-    # Determine the appropriate icon
-    icon = '➡️'  # default icon
-    for key, symbol in direction_icons.items():
-        if key in instruction.lower():
-            icon = symbol
-            break
-    
-    # Format distance and duration
-    distance = step.get('distance', '')
-    duration = step.get('duration', '')
-    
-    # Build the formatted step
-    formatted_step = f"{icon} **Step {step_number}:** {instruction}"
-    if distance and duration:
-        formatted_step += f"\n  📏 {distance} • ⏱️ {duration}"
-    
-    return formatted_step
-
 def display_risk_insights(location):
     """Display detailed risk insights"""
     insights = get_risk_insights(location)
@@ -299,6 +262,45 @@ def update_location():
     
     st.session_state.last_location_check = current_time
     return st.session_state.user_location
+
+def format_route_step(step, index):
+    """Format route step with icons and simplified instructions"""
+    # Direction icons
+    icons = {
+        'left': "↰",
+        'right': "↱",
+        'slight left': "↖",
+        'slight right': "↗",
+        'sharp left': "⬉",
+        'sharp right': "⬈",
+        'straight': "⬆",
+        'merge': "↱",
+        'roundabout': "⟳",
+        'uturn': "⮌",
+        'destination': "📍",
+        'start': "🚩"
+    }
+    
+    # Simplify instruction text
+    instruction = step['instruction'].replace('<b>', '').replace('</b>', '')
+    instruction = instruction.replace('Destination will be', '').replace('Head', 'Go')
+    
+    # Add appropriate icon
+    icon = "▪"  # default icon
+    for key, symbol in icons.items():
+        if key in instruction.lower():
+            icon = symbol
+            break
+    
+    if index == 1:  # First step
+        icon = icons['start']
+    
+    # Format distance and duration
+    distance = step.get('distance', '')
+    duration = step.get('duration', '')
+    time_info = f"({duration})" if duration else ""
+    
+    return f"{icon} {instruction} - {distance} {time_info}"
 
 def main():
     try:
@@ -390,72 +392,66 @@ def main():
                     st.session_state.route_info = route_info
                     
                     if route_info:
-                        # Create main columns for the entire route section
-                        route_col1, route_col2 = st.columns([2, 1])
+                        st.markdown("### 🚗 Route Information")
+                        st.markdown(f"**Distance:** {route_info['distance']}")
+                        st.markdown(f"**Duration:** {route_info['duration']}")
                         
-                        with route_col1:
-                            st.markdown("### 🗺️ Route Map")
-                            # Display route map
-                            route_map = create_route_map(
-                                current_location,
-                                st.session_state.selected_destination,
-                                route_info
-                            )
-                            folium_static(route_map)
+                        # Display route map
+                        route_map = create_route_map(
+                            current_location,
+                            st.session_state.selected_destination,
+                            route_info
+                        )
+                        folium_static(route_map)
                         
-                        with route_col2:
-                            # Route summary at the top
-                            st.markdown("### 🚗 Route Summary")
+                        # Display route steps
+                        with st.expander("📝 Route Steps"):
+                            total_time = route_info['duration']
+                            total_distance = route_info['distance']
+                            st.markdown(f"**Total Journey:** {total_distance} ({total_time})")
+                            
+                            # Create steps timeline
+                            for i, step in enumerate(route_info['steps'], 1):
+                                formatted_step = format_route_step(step, i)
+                                
+                                # Add visual separator between steps
+                                if i > 1:
+                                    st.markdown("┊")
+                                
+                                # Display step with custom styling
+                                st.markdown(
+                                    f"""
+                                    <div style='
+                                        padding: 10px;
+                                        border-radius: 5px;
+                                        background-color: {'#f0f2f6' if i % 2 == 0 else 'white'};
+                                        margin: 5px 0;
+                                        color: #000000;
+                                        font-family: sans-serif;
+                                    '>
+                                        {formatted_step}
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
+                            
+                            # Add final destination marker
                             st.markdown(
                                 f"""
-                                📏 **Distance:** {route_info['distance']}  
-                                ⏱️ **Est. Time:** {route_info['duration']}  
-                                🏁 **Destination:** {st.session_state.selected_destination['name']}
-                                """
+                                <div style='
+                                    padding: 10px;
+                                    border-radius: 5px;
+                                    background-color: #e6ffe6;
+                                    margin: 5px 0;
+                                    color: #000000;
+                                    font-family: sans-serif;
+                                    font-weight: 500;
+                                '>
+                                    📍 Arrive at destination
+                                </div>
+                                """,
+                                unsafe_allow_html=True
                             )
-                            
-                            # Navigation steps in a clean container
-                            st.markdown("### 📝 Navigation Steps")
-                            steps_container = st.container()
-                            with steps_container:
-                                # Start point
-                                st.markdown(format_route_step(0, {
-                                    'instruction': f"Start from your location in {current_location['city']}",
-                                    'distance': '0 km',
-                                    'duration': '0 mins'
-                                }))
-                                
-                                # Route steps
-                                for i, step in enumerate(route_info['steps'], 1):
-                                    st.markdown("<div style='margin: 10px 0;'>", unsafe_allow_html=True)
-                                    st.markdown("---")
-                                    st.markdown(format_route_step(i, step))
-                                    st.markdown("</div>", unsafe_allow_html=True)
-                                
-                                # Destination point
-                                st.markdown("---")
-                                st.markdown(format_route_step(len(route_info['steps']) + 1, {
-                                    'instruction': f"Arrive at {st.session_state.selected_destination['name']}",
-                                    'distance': route_info['distance'],
-                                    'duration': route_info['duration']
-                                }))
-                            
-                            # Route alerts in a separate container
-                            risk_zones = get_risk_zones(route_info['coordinates'])
-                            if risk_zones:
-                                st.markdown("### ⚠️ Route Alerts")
-                                alerts_container = st.container()
-                                with alerts_container:
-                                    for zone in risk_zones:
-                                        severity_color = "🔴" if zone['risk_level'] == 'high' else "🟡"
-                                        st.markdown(
-                                            f"""
-                                            <div style='padding: 10px; border-radius: 5px; background-color: {'#ffebee' if zone['risk_level'] == 'high' else '#fff3e0'}'>
-                                            {severity_color} {zone['description']}
-                                            </div>
-                                            """,
-                                            unsafe_allow_html=True
-                                        )
             
             with col2:
                 st.header("🚨 Live Alerts")
@@ -472,22 +468,73 @@ def main():
         with tab2:
             st.header("📊 Risk Analysis")
             
+            # Get comprehensive risk analysis
+            risk_analysis = st.session_state.risk_analyzer.analyze_location_risks(current_location)
+            
+            # Display overall risk level with color coding
+            risk_level = risk_analysis['overall_risk']
+            risk_colors = {
+                'high': '#ff4b4b',
+                'medium': '#ffa500',
+                'low': '#4CAF50'
+            }
+            
+            st.markdown(
+                f"""
+                <div style='
+                    padding: 20px;
+                    border-radius: 10px;
+                    background-color: {risk_colors[risk_level]}22;
+                    border: 2px solid {risk_colors[risk_level]};
+                    margin: 10px 0;
+                '>
+                    <h2 style='color: {risk_colors[risk_level]}; margin: 0;'>
+                        Overall Risk Level: {risk_level.upper()}
+                    </h2>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
             # Display risk heatmap
             risk_data = generate_heatmap_data(current_location)
             risk_map = create_risk_heatmap(current_location, risk_data)
             folium_static(risk_map)
             
-            # Display risk metrics
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Current Risk Level", st.session_state.risk_level.upper())
-            with col2:
-                st.metric("Active Alerts", len(alerts))
-            with col3:
-                st.metric("Nearby Safe Zones", len(support_locations))
+            # Display individual risks
+            st.subheader("🚨 Active Risks")
             
-            # Display detailed risk insights
-            display_risk_insights(current_location)
+            for risk in risk_analysis['risks']:
+                with st.expander(f"**{risk['type']}** - {risk['severity'].upper()}"):
+                    st.markdown(f"**Description:** {risk['description']}")
+                    if 'recommendations' in risk:
+                        st.markdown("**Safety Recommendations:**")
+                        for rec in risk['recommendations']:
+                            st.markdown(f"• {rec}")
+            
+            # Display safety recommendations
+            st.subheader("🛡️ Safety Recommendations")
+            recommendations = st.session_state.risk_analyzer.get_safety_recommendations(risk_analysis['risks'])
+            
+            for i, rec in enumerate(recommendations, 1):
+                st.markdown(
+                    f"""
+                    <div style='
+                        padding: 10px;
+                        border-radius: 5px;
+                        background-color: {'#f0f2f6' if i % 2 == 0 else 'white'};
+                        margin: 5px 0;
+                    '>
+                        {i}. {rec}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            
+            # Historical data visualization
+            st.subheader("📈 Risk Trends")
+            # This would show historical risk data trends
+            st.info("Historical risk data visualization coming soon!")
 
         with tab3:
             st.header("🆘 Emergency Help")
