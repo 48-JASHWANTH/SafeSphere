@@ -339,15 +339,15 @@ def main():
             new_lat = st.number_input("Latitude", value=current_location['lat'], format="%.6f")
             new_lng = st.number_input("Longitude", value=current_location['lng'], format="%.6f")
             if st.button("Update Location"):
-            st.session_state.user_location = {
-                'lat': new_lat,
-                'lng': new_lng,
+                st.session_state.user_location = {
+                    'lat': new_lat,
+                    'lng': new_lng,
                     'city': current_location['city'],
                     'region': current_location['region'],
                     'country': current_location['country'],
                     'timestamp': time_module.time()
-            }
-            st.rerun()
+                }
+                st.rerun()
 
         # Display weather information
         weather = get_weather(current_location)
