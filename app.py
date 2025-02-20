@@ -1,16 +1,10 @@
-import streamlit as st
-import folium
-from folium import plugins
-from streamlit_folium import folium_static
-from datetime import datetime, time
-import pandas as pd
-import json
-from dotenv import load_dotenv
 import os
-import requests
-import time as time_module
-import logging
 import sys
+import logging
+import json
+import time as time_module
+from datetime import datetime, time
+from dotenv import load_dotenv
 
 # Load environment variables first
 load_dotenv()
@@ -18,6 +12,14 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import streamlit and related packages
+import streamlit as st
+import folium
+from folium import plugins
+from streamlit_folium import folium_static
+import pandas as pd
+import requests
 
 # Set page config before any other st commands
 st.set_page_config(
@@ -27,43 +29,50 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Import local modules after environment is set up
-from maps import (
-    get_nearby_support_locations, 
-    get_weather, 
-    get_route_to_location,
-    get_risk_zones,
-    get_precise_location,
-    track_location_changes,
-    calculate_movement_metrics,
-    get_location
-)
+# Import local modules
 from utils import load_help_requests, save_help_request, generate_heatmap_data
 from risk_analyzer import RiskAnalyzer
-from groq_api import get_disaster_alerts, analyze_risk_level, get_risk_insights
+from constants import DEFAULT_LAT, DEFAULT_LNG, EMERGENCY_TYPES
+from maps_utils import get_nearby_support_locations, get_weather
+from alerts import get_disaster_alerts, analyze_risk_level
 
-# Initialize session state
+def get_location():
+    """Get user location using IP-based geolocation"""
+    try:
+        response = requests.get('https://ipapi.co/json/', timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                'lat': float(data['latitude']),
+                'lng': float(data['longitude']),
+                'city': data.get('city', 'Unknown'),
+                'region': data.get('region', 'Unknown'),
+                'country': data.get('country_name', 'Unknown')
+            }
+    except Exception as e:
+        logger.warning(f"Could not get location: {e}")
+        return {
+            'lat': DEFAULT_LAT,
+            'lng': DEFAULT_LNG,
+            'city': 'New York',
+            'region': 'New York',
+            'country': 'United States'
+        }
+
 def init_session_state():
+    """Initialize session state variables"""
     if 'initialized' not in st.session_state:
         st.session_state.initialized = True
         st.session_state.help_requests = load_help_requests()
         st.session_state.alerts = []
         st.session_state.risk_level = 'low'
-        st.session_state.user_location = None
+        st.session_state.user_location = get_location()
         st.session_state.selected_destination = None
         st.session_state.route_info = None
         st.session_state.location_history = []
         st.session_state.last_location_check = 0
         st.session_state.location_update_interval = 30
         st.session_state.risk_analyzer = RiskAnalyzer()
-        
-        # Try to get initial location
-        try:
-            initial_location = get_location()
-            if initial_location:
-                st.session_state.user_location = initial_location
-        except Exception as e:
-            logger.warning(f"Could not get initial location: {e}")
 
 # Initialize session state
 init_session_state()
