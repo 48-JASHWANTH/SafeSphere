@@ -178,6 +178,46 @@ def create_route_map(user_location, destination, route_info):
     
     return m
 
+def format_route_step(step_number, step):
+    """Format route step with icons and clear instructions"""
+    # Define direction icons
+    direction_icons = {
+        'left': '↰',
+        'right': '↱',
+        'slight left': '↖️',
+        'slight right': '↗️',
+        'sharp left': '⬉',
+        'sharp right': '⬈',
+        'straight': '⬆️',
+        'merge': '↱',
+        'roundabout': '⟳',
+        'uturn': '⮐',
+        'destination': '📍',
+        'start': '🚩'
+    }
+    
+    # Clean up instruction text
+    instruction = step['instruction'].replace('<b>', '**').replace('</b>', '**')
+    instruction = instruction.replace('<div style="font-size:0.9em">', '\n  ').replace('</div>', '')
+    
+    # Determine the appropriate icon
+    icon = '➡️'  # default icon
+    for key, symbol in direction_icons.items():
+        if key in instruction.lower():
+            icon = symbol
+            break
+    
+    # Format distance and duration
+    distance = step.get('distance', '')
+    duration = step.get('duration', '')
+    
+    # Build the formatted step
+    formatted_step = f"{icon} **Step {step_number}:** {instruction}"
+    if distance and duration:
+        formatted_step += f"\n  📏 {distance} • ⏱️ {duration}"
+    
+    return formatted_step
+
 def display_risk_insights(location):
     """Display detailed risk insights"""
     insights = get_risk_insights(location)
@@ -350,22 +390,72 @@ def main():
                     st.session_state.route_info = route_info
                     
                     if route_info:
-                        st.markdown("### 🚗 Route Information")
-                        st.markdown(f"**Distance:** {route_info['distance']}")
-                        st.markdown(f"**Duration:** {route_info['duration']}")
+                        # Create main columns for the entire route section
+                        route_col1, route_col2 = st.columns([2, 1])
                         
-                        # Display route map
-                        route_map = create_route_map(
-                            current_location,
-                            st.session_state.selected_destination,
-                            route_info
-                        )
-                        folium_static(route_map)
+                        with route_col1:
+                            st.markdown("### 🗺️ Route Map")
+                            # Display route map
+                            route_map = create_route_map(
+                                current_location,
+                                st.session_state.selected_destination,
+                                route_info
+                            )
+                            folium_static(route_map)
                         
-                        # Display route steps
-                        with st.expander("📝 Route Steps"):
-                            for i, step in enumerate(route_info['steps'], 1):
-                                st.markdown(f"{i}. {step['instruction']}")
+                        with route_col2:
+                            # Route summary at the top
+                            st.markdown("### 🚗 Route Summary")
+                            st.markdown(
+                                f"""
+                                📏 **Distance:** {route_info['distance']}  
+                                ⏱️ **Est. Time:** {route_info['duration']}  
+                                🏁 **Destination:** {st.session_state.selected_destination['name']}
+                                """
+                            )
+                            
+                            # Navigation steps in a clean container
+                            st.markdown("### 📝 Navigation Steps")
+                            steps_container = st.container()
+                            with steps_container:
+                                # Start point
+                                st.markdown(format_route_step(0, {
+                                    'instruction': f"Start from your location in {current_location['city']}",
+                                    'distance': '0 km',
+                                    'duration': '0 mins'
+                                }))
+                                
+                                # Route steps
+                                for i, step in enumerate(route_info['steps'], 1):
+                                    st.markdown("<div style='margin: 10px 0;'>", unsafe_allow_html=True)
+                                    st.markdown("---")
+                                    st.markdown(format_route_step(i, step))
+                                    st.markdown("</div>", unsafe_allow_html=True)
+                                
+                                # Destination point
+                                st.markdown("---")
+                                st.markdown(format_route_step(len(route_info['steps']) + 1, {
+                                    'instruction': f"Arrive at {st.session_state.selected_destination['name']}",
+                                    'distance': route_info['distance'],
+                                    'duration': route_info['duration']
+                                }))
+                            
+                            # Route alerts in a separate container
+                            risk_zones = get_risk_zones(route_info['coordinates'])
+                            if risk_zones:
+                                st.markdown("### ⚠️ Route Alerts")
+                                alerts_container = st.container()
+                                with alerts_container:
+                                    for zone in risk_zones:
+                                        severity_color = "🔴" if zone['risk_level'] == 'high' else "🟡"
+                                        st.markdown(
+                                            f"""
+                                            <div style='padding: 10px; border-radius: 5px; background-color: {'#ffebee' if zone['risk_level'] == 'high' else '#fff3e0'}'>
+                                            {severity_color} {zone['description']}
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True
+                                        )
             
             with col2:
                 st.header("🚨 Live Alerts")
