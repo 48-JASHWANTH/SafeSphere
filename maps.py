@@ -95,25 +95,25 @@ def get_precise_location():
             except Exception as e:
                 st.warning(f"Google Maps geolocation failed: {str(e)}")
 
-        # Fallback to IP-based geolocation
-        try:
-            response = requests.get('https://ipapi.co/json/')
-            if response.status_code == 200:
-                data = response.json()
-                return {
-                    'lat': float(data['latitude']),
-                    'lng': float(data['longitude']),
-                    'city': data.get('city', 'Unknown'),
-                    'region': data.get('region', 'Unknown'),
-                    'country': data.get('country_name', 'Unknown'),
-                    'postal_code': data.get('postal', 'Unknown'),
-                    'accuracy': 1000,  # Limit accuracy for IP-based location
-                    'formatted_address': f"{data.get('city', '')}, {data.get('region', '')}, {data.get('country_name', '')}",
-                    'timestamp': time.time(),
-                    'source': 'ip_geolocation'
-                }
-        except Exception as e:
-            st.warning(f"IP geolocation failed: {str(e)}")
+        # # Fallback to IP-based geolocation
+        # try:
+        #     response = requests.get('https://ipapi.co/json/')
+        #     if response.status_code == 200:
+        #         data = response.json()
+        #         return {
+        #             'lat': float(data['latitude']),
+        #             'lng': float(data['longitude']),
+        #             'city': data.get('city', 'Unknown'),
+        #             'region': data.get('region', 'Unknown'),
+        #             'country': data.get('country_name', 'Unknown'),
+        #             'postal_code': data.get('postal', 'Unknown'),
+        #             'accuracy': 1000,  # Limit accuracy for IP-based location
+        #             'formatted_address': f"{data.get('city', '')}, {data.get('region', '')}, {data.get('country_name', '')}",
+        #             'timestamp': time.time(),
+        #             'source': 'ip_geolocation'
+        #         }
+        # except Exception as e:
+        #     st.warning(f"IP geolocation failed: {str(e)}")
 
         # If all methods fail, return default location
         return get_default_location()
