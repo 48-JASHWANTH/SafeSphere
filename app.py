@@ -514,6 +514,35 @@ def main():
                 # Get support locations with error handling
                 support_locations = get_nearby_support_locations(current_location)
                 
+                # Create and display the safety map first
+                if current_location:
+                    safety_map = folium.Map(
+                        location=[current_location['lat'], current_location['lng']],
+                        zoom_start=13
+                    )
+                    
+                    # Add current location marker
+                    folium.Marker(
+                        [current_location['lat'], current_location['lng']],
+                        popup='Your Location',
+                        icon=folium.Icon(color='red', icon='info-sign'),
+                        tooltip='You are here'
+                    ).add_to(safety_map)
+                    
+                    # Add support locations to map
+                    if support_locations:
+                        for location in support_locations:
+                            folium.Marker(
+                                [location['lat'], location['lng']],
+                                popup=f"{location['name']} ({location['type']})",
+                                icon=folium.Icon(color='green', icon='info-sign'),
+                                tooltip=location['name']
+                            ).add_to(safety_map)
+                    
+                    # Display the map
+                    folium_static(safety_map)
+                
+                # Rest of the destination selection and route display
                 if support_locations and len(support_locations) > 0:
                     # Add location selector
                     st.markdown("### 🎯 Select Destination")
@@ -524,134 +553,37 @@ def main():
                         format_func=lambda x: destination_options[x]
                     )
                     
-                    selected_destination = support_locations[selected_index]
-                    st.session_state.selected_destination = selected_destination
+                    selected_location = support_locations[selected_index]
+                    route_info = get_route_to_location(current_location, selected_location)
                     
-                    # Get and display route
-                    if st.session_state.selected_destination:
-                        route_info = get_route_to_location(
-                            current_location,
-                            st.session_state.selected_destination
-                        )
-                        st.session_state.route_info = route_info
+                    if route_info and 'steps' in route_info:
+                        st.markdown("### 🚗 Route Information")
+                        st.markdown(f"**Distance:** {route_info['distance']}")
+                        st.markdown(f"**Duration:** {route_info['duration']}")
                         
-                        if route_info:
-                            st.markdown("### 🚗 Route Information")
-                            st.markdown(f"**Distance:** {route_info['distance']}")
-                            st.markdown(f"**Duration:** {route_info['duration']}")
+                        st.markdown("### 🚶 Step-by-Step Directions")
+                        for i, step in enumerate(route_info['steps']):
+                            st.markdown(f"""
+                                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px; margin: 5px 0;'>
+                                    <strong>Step {i+1}:</strong> {step['instruction']}
+                                    <br><small>Distance: {step['distance']}</small>
+                                </div>
+                            """, unsafe_allow_html=True)
                             
-                            # Display route map
-                            route_map = create_route_map(
-                                current_location,
-                                st.session_state.selected_destination,
-                                route_info
-                            )
-                            folium_static(route_map)
-                            
-                            # Display route steps
-                            with st.expander("📝 Route Steps", expanded=True):
+                            # Add progress indicators between steps, but not after the last step
+                            if i < len(route_info['steps']) - 1:
                                 st.markdown("""
-                                    <style>
-                                    .route-step {
-                                        background-color: #1e1e1e;
-                                        padding: 15px;
-                                        border-radius: 10px;
-                                        margin: 10px 0;
-                                        border-left: 4px solid #00ff00;
-                                        color: white;
-                                    }
-                                    .step-number {
-                                        color: #00ff00;
-                                        font-size: 18px;
-                                        font-weight: bold;
-                                    }
-                                    .step-distance {
-                                        color: #cccccc;
-                                        font-size: 14px;
-                                        float: right;
-                                    }
-                                    .step-duration {
-                                        color: #cccccc;
-                                        font-size: 14px;
-                                        margin-left: 15px;
-                                        float: right;
-                                    }
-                                    .step-instruction {
-                                        margin-top: 5px;
-                                        font-size: 16px;
-                                        color: white;
-                                    }
-                                    .journey-summary {
-                                        background-color: #2d2d2d;
-                                        padding: 15px;
-                                        border-radius: 10px;
-                                        margin-bottom: 20px;
-                                        color: white;
-                                    }
-                                    .journey-summary h4 {
-                                        color: #00ff00;
-                                        margin: 0;
-                                    }
-                                    .journey-summary p {
-                                        margin: 10px 0 0 0;
-                                        color: white;
-                                    }
-                                    .progress-indicator {
-                                        text-align: center;
-                                        color: #00ff00;
-                                        margin: 5px 0;
-                                    }
-                                    .arrival-indicator {
-                                        background-color: #006400;
-                                        color: white;
-                                        padding: 15px;
-                                        border-radius: 10px;
-                                        margin-top: 20px;
-                                        text-align: center;
-                                    }
-                                    </style>
-                                """, unsafe_allow_html=True)
-
-                                total_distance = route_info['distance']
-                                total_duration = route_info['duration']
-                                st.markdown(f"""
-                                    <div class="journey-summary">
-                                        <h4>Journey Summary</h4>
-                                        <p>
-                                            🛣️ Total Distance: <strong>{total_distance}</strong> &nbsp;&nbsp;|&nbsp;&nbsp;
-                                            ⏱️ Total Duration: <strong>{total_duration}</strong>
-                                        </p>
+                                    <div class="progress-indicator">
+                                        ↓
                                     </div>
                                 """, unsafe_allow_html=True)
-
-                            for i, step in enumerate(route_info['steps'], 1):
-                                # Clean up HTML instructions
-                                instruction = step['instruction'].replace('<b>', '<strong>').replace('</b>', '</strong>')
-                                instruction = instruction.replace('<div style="font-size:0.9em">', '').replace('</div>', '')
-
-                                st.markdown(f"""
-                                    <div class="route-step">
-                                        <span class="step-number">Step {i}</span>
-                                        <span class="step-duration">⏱️ {step['duration']}</span>
-                                        <span class="step-distance">🛣️ {step['distance']}</span>
-                                        <div class="step-instruction">{instruction}</div>
-                                    </div>
-                                """, unsafe_allow_html=True)
-
-                                # Add progress indicators between steps
-                                if i < len(route_info['steps']):
-                                    st.markdown("""
-                                        <div class="progress-indicator">
-                                            ↓
-                                        </div>
-                                    """, unsafe_allow_html=True)
-
-                                # Add arrival indicator at the end
-                                st.markdown("""
-                                    <div class="arrival-indicator">
-                                        🏁 Arrival at Destination
-                                    </div>
-                                """, unsafe_allow_html=True)
+                        
+                        # Add arrival indicator only once at the end
+                        st.markdown("""
+                            <div class="arrival-indicator" style='background-color: #4CAF50; padding: 10px; border-radius: 5px; margin: 10px 0; text-align: center; color: white;'>
+                                🏁 Arrival at Destination
+                            </div>
+                        """, unsafe_allow_html=True)
                 else:
                     st.warning("No support locations found in your area. Please try a different location or refresh the page.")
             
