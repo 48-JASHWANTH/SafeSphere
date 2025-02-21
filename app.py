@@ -501,27 +501,27 @@ def main():
                                     </div>
                                 """, unsafe_allow_html=True)
 
-                                for i, step in enumerate(route_info['steps'], 1):
-                                    # Clean up HTML instructions
-                                    instruction = step['instruction'].replace('<b>', '<strong>').replace('</b>', '</strong>')
-                                    instruction = instruction.replace('<div style="font-size:0.9em">', '').replace('</div>', '')
+                            for i, step in enumerate(route_info['steps'], 1):
+                                # Clean up HTML instructions
+                                instruction = step['instruction'].replace('<b>', '<strong>').replace('</b>', '</strong>')
+                                instruction = instruction.replace('<div style="font-size:0.9em">', '').replace('</div>', '')
 
-                                    st.markdown(f"""
-                                        <div class="route-step">
-                                            <span class="step-number">Step {i}</span>
-                                            <span class="step-duration">⏱️ {step['duration']}</span>
-                                            <span class="step-distance">🛣️ {step['distance']}</span>
-                                            <div class="step-instruction">{instruction}</div>
+                                st.markdown(f"""
+                                    <div class="route-step">
+                                        <span class="step-number">Step {i}</span>
+                                        <span class="step-duration">⏱️ {step['duration']}</span>
+                                        <span class="step-distance">🛣️ {step['distance']}</span>
+                                        <div class="step-instruction">{instruction}</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+
+                                # Add progress indicators between steps
+                                if i < len(route_info['steps']):
+                                    st.markdown("""
+                                        <div class="progress-indicator">
+                                            ↓
                                         </div>
                                     """, unsafe_allow_html=True)
-
-                                    # Add progress indicators between steps
-                                    if i < len(route_info['steps']):
-                                        st.markdown("""
-                                            <div class="progress-indicator">
-                                                ↓
-                                            </div>
-                                        """, unsafe_allow_html=True)
 
                                 # Add arrival indicator at the end
                                 st.markdown("""
