@@ -263,14 +263,14 @@ def get_precise_location():
 
         # Final fallback to default location
         return {
-            'lat': 40.7128,
-            'lng': -74.0060,
-            'city': 'New York',
-            'region': 'New York',
-            'country': 'United States',
-            'postal_code': '10001',
+            'lat': 17.537348,
+            'lng': 78.384515,
+            'city': 'Hyderabad',
+            'region': 'Telangana',
+            'country': 'India',
+            'postal_code': '500090',
             'accuracy': 1000,
-            'formatted_address': 'New York, NY, USA',
+            'formatted_address': 'Hyderabad, HYD, INDIA',
             'timestamp': time.time(),
             'source': 'default'
         }
