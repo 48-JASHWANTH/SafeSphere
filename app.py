@@ -263,9 +263,35 @@ def main():
         
         if current_location:
             st.sidebar.markdown(f"📍 **Current Location:**")
-            st.sidebar.markdown(f"City: {current_location['city']}")
-            st.sidebar.markdown(f"Region: {current_location['region']}")
-            st.sidebar.markdown(f"Accuracy: ±{current_location.get('accuracy', 'N/A')}m")
+            
+            # Display formatted address if available
+            if 'formatted_address' in current_location:
+                st.sidebar.markdown(f"**Address:** {current_location['formatted_address']}")
+            
+            # Display detailed location information
+            if 'sublocality' in current_location and current_location['sublocality']:
+                st.sidebar.markdown(f"**Area:** {current_location['sublocality']}")
+            st.sidebar.markdown(f"**City:** {current_location['city']}")
+            st.sidebar.markdown(f"**Region:** {current_location['region']}")
+            if 'postal_code' in current_location:
+                st.sidebar.markdown(f"**Postal Code:** {current_location['postal_code']}")
+            
+            # Display accuracy and source
+            accuracy_meters = current_location.get('accuracy', 'N/A')
+            source = current_location.get('source', 'Unknown')
+            
+            accuracy_color = "#00ff00" if accuracy_meters < 100 else "#ffa500" if accuracy_meters < 1000 else "#ff4b4b"
+            
+            st.sidebar.markdown(f"""
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px; margin: 10px 0;'>
+                    <div style='color: {accuracy_color};'>
+                        📡 Accuracy: ±{accuracy_meters}m
+                    </div>
+                    <div style='color: #cccccc; font-size: 12px;'>
+                        Source: {source}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
             # Display weather information in sidebar
             weather = get_weather(current_location)
@@ -510,13 +536,48 @@ def main():
                 st.header("🚨 Live Alerts")
                 alerts = get_disaster_alerts(current_location)
                 
-                for alert in alerts:
-                    if alert['severity'] == 'high':
-                        st.error(f"⚠️ {alert['message']}")
-                    elif alert['severity'] == 'medium':
-                        st.warning(f"⚠️ {alert['message']}")
-                    else:
-                        st.info(f"ℹ️ {alert['message']}")
+                if alerts:
+                    # Group alerts by type
+                    alert_types = {
+                        'weather': '🌦️',
+                        'air_quality': '💨',
+                        'earthquake': '🌋',
+                        'traffic': '🚗'
+                    }
+                    
+                    for alert in alerts:
+                        alert_icon = alert_types.get(alert['type'], '⚠️')
+                        
+                        if alert['severity'] == 'high':
+                            st.markdown(f"""
+                                <div style='background-color: #ff4b4b; padding: 15px; border-radius: 10px; margin: 10px 0; color: white;'>
+                                    <strong>{alert_icon} {alert['type'].upper()}</strong><br>
+                                    {alert['message']}
+                                </div>
+                            """, unsafe_allow_html=True)
+                        elif alert['severity'] == 'medium':
+                            st.markdown(f"""
+                                <div style='background-color: #ffa500; padding: 15px; border-radius: 10px; margin: 10px 0; color: white;'>
+                                    <strong>{alert_icon} {alert['type'].upper()}</strong><br>
+                                    {alert['message']}
+                                </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"""
+                                <div style='background-color: #4CAF50; padding: 15px; border-radius: 10px; margin: 10px 0; color: white;'>
+                                    <strong>{alert_icon} {alert['type'].upper()}</strong><br>
+                                    {alert['message']}
+                                </div>
+                            """, unsafe_allow_html=True)
+                    
+                    # Add auto-refresh functionality
+                    st.markdown("""
+                        <div style='text-align: center; color: #666; font-size: 12px; margin-top: 20px;'>
+                            Alerts auto-refresh every 5 minutes
+                        </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.success("No active alerts in your area at this time.")
 
         with tab2:
             st.header("📊 Risk Analysis")

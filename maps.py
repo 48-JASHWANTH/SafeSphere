@@ -8,6 +8,8 @@ from datetime import datetime
 import random
 from geopy.distance import geodesic
 import time
+import streamlit.components.v1 as components
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 # Initialize Google Maps client - Add error handling
 try:
@@ -191,43 +193,90 @@ def get_weather(location):
 
 def get_precise_location():
     """
-    Get precise user location using Google Maps Geolocation API
-    Returns more accurate location than IP-based geolocation
+    Get precise user location using multiple methods
     """
     try:
-        payload = {
-            'considerIp': True,
-            'wifiAccessPoints': []  # Can be populated with nearby WiFi data if available
+        # First try Google Maps Geolocation API
+        if gmaps:
+            try:
+                # Basic geolocation request
+                response = gmaps.geolocate()
+                
+                if response and 'location' in response:
+                    location = response['location']
+                    accuracy = min(response.get('accuracy', 1000), 1000)  # Cap accuracy at 1000m
+                    
+                    # Get detailed address using reverse geocoding
+                    reverse_geocode = gmaps.reverse_geocode((location['lat'], location['lng']))
+                    
+                    if reverse_geocode and len(reverse_geocode) > 0:
+                        address_components = reverse_geocode[0]['address_components']
+                        formatted_address = reverse_geocode[0].get('formatted_address', '')
+                        
+                        # Extract detailed location information
+                        city = next((comp['long_name'] for comp in address_components 
+                                   if 'locality' in comp['types']), 'Unknown')
+                        sublocality = next((comp['long_name'] for comp in address_components 
+                                          if 'sublocality' in comp['types']), '')
+                        region = next((comp['long_name'] for comp in address_components 
+                                     if 'administrative_area_level_1' in comp['types']), 'Unknown')
+                        country = next((comp['long_name'] for comp in address_components 
+                                     if 'country' in comp['types']), 'Unknown')
+                        postal_code = next((comp['long_name'] for comp in address_components 
+                                         if 'postal_code' in comp['types']), 'Unknown')
+                        
+                        return {
+                            'lat': location['lat'],
+                            'lng': location['lng'],
+                            'accuracy': accuracy,
+                            'city': city,
+                            'sublocality': sublocality,
+                            'region': region,
+                            'country': country,
+                            'postal_code': postal_code,
+                            'formatted_address': formatted_address,
+                            'timestamp': time.time(),
+                            'source': 'google_maps'
+                        }
+            except Exception as e:
+                st.warning(f"Google Maps geolocation failed: {str(e)}")
+
+        # Fallback to IP-based geolocation
+        try:
+            response = requests.get('https://ipapi.co/json/')
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    'lat': float(data['latitude']),
+                    'lng': float(data['longitude']),
+                    'city': data.get('city', 'Unknown'),
+                    'region': data.get('region', 'Unknown'),
+                    'country': data.get('country_name', 'Unknown'),
+                    'postal_code': data.get('postal', 'Unknown'),
+                    'accuracy': 1000,  # Limit accuracy for IP-based location
+                    'formatted_address': f"{data.get('city', '')}, {data.get('region', '')}, {data.get('country_name', '')}",
+                    'timestamp': time.time(),
+                    'source': 'ip_geolocation'
+                }
+        except Exception as e:
+            st.warning(f"IP geolocation failed: {str(e)}")
+
+        # Final fallback to default location
+        return {
+            'lat': 40.7128,
+            'lng': -74.0060,
+            'city': 'New York',
+            'region': 'New York',
+            'country': 'United States',
+            'postal_code': '10001',
+            'accuracy': 1000,
+            'formatted_address': 'New York, NY, USA',
+            'timestamp': time.time(),
+            'source': 'default'
         }
-        
-        response = gmaps.geolocate()
-        
-        if response and 'location' in response:
-            location = response['location']
-            accuracy = response.get('accuracy', 0)
-            
-            # Get address details using reverse geocoding
-            reverse_geocode = gmaps.reverse_geocode((location['lat'], location['lng']))
-            address_components = reverse_geocode[0]['address_components'] if reverse_geocode else []
-            
-            city = next((comp['long_name'] for comp in address_components 
-                        if 'locality' in comp['types']), 'Unknown')
-            region = next((comp['long_name'] for comp in address_components 
-                         if 'administrative_area_level_1' in comp['types']), 'Unknown')
-            country = next((comp['long_name'] for comp in address_components 
-                          if 'country' in comp['types']), 'Unknown')
-            
-            return {
-                'lat': location['lat'],
-                'lng': location['lng'],
-                'accuracy': accuracy,
-                'city': city,
-                'region': region,
-                'country': country,
-                'timestamp': time.time()
-            }
+
     except Exception as e:
-        st.warning(f"Error getting precise location: {str(e)}")
+        st.error(f"Error getting location: {str(e)}")
         return None
 
 def track_location_changes(previous_location, current_location, threshold_meters=50):
