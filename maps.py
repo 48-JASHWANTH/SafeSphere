@@ -270,7 +270,7 @@ def get_precise_location():
             'country': 'India',
             'postal_code': '500090',
             'accuracy': 1000,
-            'formatted_address': 'Hyderabad, HYD, INDIA',
+            'formatted_address': 'G9XV+4WX, Bachupally, Hyderabad, Telangana 500090, India',
             'timestamp': time.time(),
             'source': 'default'
         }
