@@ -6,6 +6,21 @@ import random
 from datetime import datetime
 import requests
 import googlemaps
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+from geopy.distance import geodesic
+
+# Initialize Google Maps client
+try:
+    google_maps_key = os.getenv('GOOGLE_MAPS_API_KEY')
+    if not google_maps_key:
+        st.error("Google Maps API key is missing. Please check your .env file.")
+        gmaps = None
+    else:
+        gmaps = googlemaps.Client(key=google_maps_key)
+except Exception as e:
+    st.error(f"Error initializing Google Maps client: {str(e)}")
+    gmaps = None
 
 # Initialize Groq client with error handling
 try:
@@ -19,127 +34,158 @@ except Exception as e:
 
 analyzer = SentimentIntensityAnalyzer()
 
+def create_requests_session():
+    """Create a requests session with retry logic"""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,  # number of retries
+        backoff_factor=1,  # wait 1, 2, 4 seconds between retries
+        status_forcelist=[500, 502, 503, 504, 404],
+        allowed_methods=["HEAD", "GET", "POST", "OPTIONS"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
 def get_disaster_alerts(location):
     """
-    Fetch real-time disaster alerts from multiple sources
+    Fetch real-time disaster alerts from multiple sources with improved error handling
     """
     alerts = []
+    session = create_requests_session()
     
     try:
         # Weather alerts from OpenWeatherMap
         weather_api_key = os.getenv('OPENWEATHER_API_KEY')
-        weather_url = f"http://api.openweathermap.org/data/2.5/weather?lat={location['lat']}&lon={location['lng']}&appid={weather_api_key}&units=metric"
-        
-        weather_response = requests.get(weather_url)
-        if weather_response.status_code == 200:
-            weather_data = weather_response.json()
+        if not weather_api_key:
+            st.warning("OpenWeather API key is missing")
+            return alerts
+
+        # Weather data with retry
+        try:
+            weather_url = f"http://api.openweathermap.org/data/2.5/weather?lat={location['lat']}&lon={location['lng']}&appid={weather_api_key}&units=metric"
+            weather_response = session.get(weather_url, timeout=10)
             
-            # Check for extreme weather conditions
-            if 'main' in weather_data:
-                temp = weather_data['main']['temp']
-                humidity = weather_data['main']['humidity']
+            if weather_response.status_code == 200:
+                weather_data = weather_response.json()
                 
-                # Temperature alerts
-                if temp > 35:
-                    alerts.append({
-                        'message': f'Extreme heat warning: {temp}°C. Stay hydrated and avoid outdoor activities.',
-                        'severity': 'high',
-                        'type': 'weather',
-                        'timestamp': datetime.now().isoformat()
-                    })
-                elif temp < 0:
-                    alerts.append({
-                        'message': f'Freezing temperature alert: {temp}°C. Take precautions against cold.',
-                        'severity': 'high',
-                        'type': 'weather',
-                        'timestamp': datetime.now().isoformat()
-                    })
-                
-                # Humidity alerts
-                if humidity > 85:
-                    alerts.append({
-                        'message': f'High humidity warning: {humidity}%. Air quality may be affected.',
-                        'severity': 'medium',
-                        'type': 'weather',
-                        'timestamp': datetime.now().isoformat()
-                    })
-        
-        # Air Quality Index from OpenWeatherMap
-        aqi_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={location['lat']}&lon={location['lng']}&appid={weather_api_key}"
-        
-        aqi_response = requests.get(aqi_url)
-        if aqi_response.status_code == 200:
-            aqi_data = aqi_response.json()
-            if 'list' in aqi_data and len(aqi_data['list']) > 0:
-                aqi = aqi_data['list'][0]['main']['aqi']
-                if aqi >= 4:
-                    alerts.append({
-                        'message': 'Poor air quality detected. Sensitive groups should stay indoors.',
-                        'severity': 'high',
-                        'type': 'air_quality',
-                        'timestamp': datetime.now().isoformat()
-                    })
-                elif aqi == 3:
-                    alerts.append({
-                        'message': 'Moderate air quality. Consider reducing outdoor activities.',
-                        'severity': 'medium',
-                        'type': 'air_quality',
-                        'timestamp': datetime.now().isoformat()
-                    })
-        
-        # Earthquake data from USGS
-        earthquake_url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson"
-        earthquake_response = requests.get(earthquake_url)
-        if earthquake_response.status_code == 200:
-            earthquake_data = earthquake_response.json()
-            
-            for feature in earthquake_data['features']:
-                eq_lat = feature['geometry']['coordinates'][1]
-                eq_lng = feature['geometry']['coordinates'][0]
-                
-                # Calculate distance from user's location
-                from geopy.distance import geodesic
-                distance = geodesic(
-                    (location['lat'], location['lng']),
-                    (eq_lat, eq_lng)
-                ).kilometers
-                
-                # Alert if earthquake is within 100km
-                if distance <= 100:
-                    magnitude = feature['properties']['mag']
-                    place = feature['properties']['place']
+                if 'main' in weather_data:
+                    temp = weather_data['main']['temp']
+                    humidity = weather_data['main']['humidity']
                     
-                    alerts.append({
-                        'message': f'Earthquake detected: Magnitude {magnitude} at {place}',
-                        'severity': 'high' if magnitude >= 4.0 else 'medium',
-                        'type': 'earthquake',
-                        'timestamp': datetime.now().isoformat()
-                    })
-        
-        # Traffic incidents from Google Maps
-        google_maps_key = os.getenv('GOOGLE_MAPS_API_KEY')
-        gmaps = googlemaps.Client(key=google_maps_key)
-        
-        traffic_response = gmaps.places_nearby(
-            location=(location['lat'], location['lng']),
-            radius=5000,  # 5km radius
-            keyword='traffic incident'
-        )
-        
-        if 'results' in traffic_response:
-            for incident in traffic_response['results'][:3]:  # Limit to 3 most recent incidents
-                alerts.append({
-                    'message': f"Traffic incident reported near {incident['name']}",
-                    'severity': 'medium',
-                    'type': 'traffic',
-                    'timestamp': datetime.now().isoformat()
-                })
+                    # Temperature alerts
+                    if temp > 35:
+                        alerts.append({
+                            'message': f'Extreme heat warning: {temp}°C. Stay hydrated and avoid outdoor activities.',
+                            'severity': 'high',
+                            'type': 'weather',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                    elif temp < 0:
+                        alerts.append({
+                            'message': f'Freezing temperature alert: {temp}°C. Take precautions against cold.',
+                            'severity': 'high',
+                            'type': 'weather',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                    
+                    # Humidity alerts
+                    if humidity > 85:
+                        alerts.append({
+                            'message': f'High humidity warning: {humidity}%. Air quality may be affected.',
+                            'severity': 'medium',
+                            'type': 'weather',
+                            'timestamp': datetime.now().isoformat()
+                        })
+        except Exception as e:
+            st.warning(f"Weather data fetch failed: {str(e)}")
+
+        # Air Quality Index with retry
+        try:
+            aqi_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={location['lat']}&lon={location['lng']}&appid={weather_api_key}"
+            aqi_response = session.get(aqi_url, timeout=10)
+            
+            if aqi_response.status_code == 200:
+                aqi_data = aqi_response.json()
+                if 'list' in aqi_data and len(aqi_data['list']) > 0:
+                    aqi = aqi_data['list'][0]['main']['aqi']
+                    if aqi >= 4:
+                        alerts.append({
+                            'message': 'Poor air quality detected. Sensitive groups should stay indoors.',
+                            'severity': 'high',
+                            'type': 'air_quality',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                    elif aqi == 3:
+                        alerts.append({
+                            'message': 'Moderate air quality. Consider reducing outdoor activities.',
+                            'severity': 'medium',
+                            'type': 'air_quality',
+                            'timestamp': datetime.now().isoformat()
+                        })
+        except Exception as e:
+            st.warning(f"Air quality data fetch failed: {str(e)}")
+
+        # Earthquake data with retry
+        try:
+            earthquake_url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson"
+            earthquake_response = session.get(earthquake_url, timeout=10)
+            
+            if earthquake_response.status_code == 200:
+                earthquake_data = earthquake_response.json()
                 
+                for feature in earthquake_data['features']:
+                    eq_lat = feature['geometry']['coordinates'][1]
+                    eq_lng = feature['geometry']['coordinates'][0]
+                    
+                    # Calculate distance from user's location
+                    distance = geodesic(
+                        (location['lat'], location['lng']),
+                        (eq_lat, eq_lng)
+                    ).kilometers
+                    
+                    # Alert if earthquake is within 100km
+                    if distance <= 100:
+                        magnitude = feature['properties']['mag']
+                        place = feature['properties']['place']
+                        
+                        alerts.append({
+                            'message': f'Earthquake detected: Magnitude {magnitude} at {place}',
+                            'severity': 'high' if magnitude >= 4.0 else 'medium',
+                            'type': 'earthquake',
+                            'timestamp': datetime.now().isoformat()
+                        })
+        except Exception as e:
+            st.warning(f"Earthquake data fetch failed: {str(e)}")
+
+        # Traffic incidents
+        if gmaps:
+            try:
+                traffic_response = gmaps.places_nearby(
+                    location=(location['lat'], location['lng']),
+                    radius=5000,
+                    keyword='traffic incident'
+                )
+                
+                if 'results' in traffic_response:
+                    for incident in traffic_response['results'][:3]:
+                        alerts.append({
+                            'message': f"Traffic incident reported near {incident['name']}",
+                            'severity': 'medium',
+                            'type': 'traffic',
+                            'timestamp': datetime.now().isoformat()
+                        })
+            except Exception as e:
+                st.warning(f"Traffic data fetch failed: {str(e)}")
+
         return alerts
-        
+
     except Exception as e:
         st.error(f"Error fetching disaster alerts: {str(e)}")
         return []
+    finally:
+        session.close()
 
 def analyze_risk_level(location, alerts=None):
     """
