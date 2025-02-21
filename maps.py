@@ -21,9 +21,26 @@ except Exception as e:
     gmaps = None
 geolocator = Nominatim(user_agent="urban_safety_app")
 
+def get_default_location():
+    """
+    Return default location settings
+    """
+    return {
+        'lat': 17.537348,
+        'lng': 78.384515,
+        'city': 'Hyderabad',
+        'region': 'Telangana',
+        'country': 'India',
+        'postal_code': '500090',
+        'accuracy': 1000,
+        'formatted_address': 'G9XV+4WX, Bachupally, Hyderabad, Telangana 500090, India',
+        'timestamp': time.time(),
+        'source': 'default'
+    }
+
 def get_user_location():
     """
-    Get user's location using IP geolocation as fallback
+    Get user's location using IP geolocation with default fallback
     """
     try:
         # First try IP-based geolocation
@@ -39,15 +56,87 @@ def get_user_location():
             }
     except Exception as e:
         st.warning(f"Could not get precise location: {str(e)}")
-        # Fallback to New York coordinates
-        return {
-            'lat': 40.7128,
-            'lng': -74.0060,
-            'city': 'New York',
-            'region': 'New York',
-            'country': 'United States'
-        }
+        # Return default location
+        return get_default_location()
 
+def get_precise_location():
+    """
+    Get precise user location using multiple methods
+    """
+    try:
+        # First try Google Maps Geolocation API
+        if gmaps:
+            try:
+                # Basic geolocation request
+                response = gmaps.geolocate()
+                
+                if response and 'location' in response:
+                    location = response['location']
+                    accuracy = min(response.get('accuracy', 1000), 1000)  # Cap accuracy at 1000m
+                    
+                    # Get detailed address using reverse geocoding
+                    reverse_geocode = gmaps.reverse_geocode((location['lat'], location['lng']))
+                    
+                    if reverse_geocode and len(reverse_geocode) > 0:
+                        address_components = reverse_geocode[0]['address_components']
+                        formatted_address = reverse_geocode[0].get('formatted_address', '')
+                        
+                        # Extract detailed location information
+                        city = next((comp['long_name'] for comp in address_components 
+                                   if 'locality' in comp['types']), 'Unknown')
+                        sublocality = next((comp['long_name'] for comp in address_components 
+                                          if 'sublocality' in comp['types']), '')
+                        region = next((comp['long_name'] for comp in address_components 
+                                     if 'administrative_area_level_1' in comp['types']), 'Unknown')
+                        country = next((comp['long_name'] for comp in address_components 
+                                     if 'country' in comp['types']), 'Unknown')
+                        postal_code = next((comp['long_name'] for comp in address_components 
+                                         if 'postal_code' in comp['types']), 'Unknown')
+                        
+                        return {
+                            'lat': location['lat'],
+                            'lng': location['lng'],
+                            'accuracy': accuracy,
+                            'city': city,
+                            'sublocality': sublocality,
+                            'region': region,
+                            'country': country,
+                            'postal_code': postal_code,
+                            'formatted_address': formatted_address,
+                            'timestamp': time.time(),
+                            'source': 'google_maps'
+                        }
+            except Exception as e:
+                st.warning(f"Google Maps geolocation failed: {str(e)}")
+
+        # Fallback to IP-based geolocation
+        try:
+            response = requests.get('https://ipapi.co/json/')
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    'lat': float(data['latitude']),
+                    'lng': float(data['longitude']),
+                    'city': data.get('city', 'Unknown'),
+                    'region': data.get('region', 'Unknown'),
+                    'country': data.get('country_name', 'Unknown'),
+                    'postal_code': data.get('postal', 'Unknown'),
+                    'accuracy': 1000,  # Limit accuracy for IP-based location
+                    'formatted_address': f"{data.get('city', '')}, {data.get('region', '')}, {data.get('country_name', '')}",
+                    'timestamp': time.time(),
+                    'source': 'ip_geolocation'
+                }
+        except Exception as e:
+            st.warning(f"IP geolocation failed: {str(e)}")
+
+        # If all methods fail, return default location
+        return get_default_location()
+
+    except Exception as e:
+        st.error(f"Error getting location: {str(e)}")
+        return get_default_location()
+
+# Rest of the functions remain unchanged
 def get_nearby_support_locations(location):
     """
     Get real nearby emergency services using Google Places API
@@ -191,94 +280,6 @@ def get_weather(location):
         st.error(f"Error fetching weather data: {str(e)}")
     return None
 
-def get_precise_location():
-    """
-    Get precise user location using multiple methods
-    """
-    try:
-        # First try Google Maps Geolocation API
-        if gmaps:
-            try:
-                # Basic geolocation request
-                response = gmaps.geolocate()
-                
-                if response and 'location' in response:
-                    location = response['location']
-                    accuracy = min(response.get('accuracy', 1000), 1000)  # Cap accuracy at 1000m
-                    
-                    # Get detailed address using reverse geocoding
-                    reverse_geocode = gmaps.reverse_geocode((location['lat'], location['lng']))
-                    
-                    if reverse_geocode and len(reverse_geocode) > 0:
-                        address_components = reverse_geocode[0]['address_components']
-                        formatted_address = reverse_geocode[0].get('formatted_address', '')
-                        
-                        # Extract detailed location information
-                        city = next((comp['long_name'] for comp in address_components 
-                                   if 'locality' in comp['types']), 'Unknown')
-                        sublocality = next((comp['long_name'] for comp in address_components 
-                                          if 'sublocality' in comp['types']), '')
-                        region = next((comp['long_name'] for comp in address_components 
-                                     if 'administrative_area_level_1' in comp['types']), 'Unknown')
-                        country = next((comp['long_name'] for comp in address_components 
-                                     if 'country' in comp['types']), 'Unknown')
-                        postal_code = next((comp['long_name'] for comp in address_components 
-                                         if 'postal_code' in comp['types']), 'Unknown')
-                        
-                        return {
-                            'lat': location['lat'],
-                            'lng': location['lng'],
-                            'accuracy': accuracy,
-                            'city': city,
-                            'sublocality': sublocality,
-                            'region': region,
-                            'country': country,
-                            'postal_code': postal_code,
-                            'formatted_address': formatted_address,
-                            'timestamp': time.time(),
-                            'source': 'google_maps'
-                        }
-            except Exception as e:
-                st.warning(f"Google Maps geolocation failed: {str(e)}")
-
-        # Fallback to IP-based geolocation
-        try:
-            response = requests.get('https://ipapi.co/json/')
-            if response.status_code == 200:
-                data = response.json()
-                return {
-                    'lat': float(data['latitude']),
-                    'lng': float(data['longitude']),
-                    'city': data.get('city', 'Unknown'),
-                    'region': data.get('region', 'Unknown'),
-                    'country': data.get('country_name', 'Unknown'),
-                    'postal_code': data.get('postal', 'Unknown'),
-                    'accuracy': 1000,  # Limit accuracy for IP-based location
-                    'formatted_address': f"{data.get('city', '')}, {data.get('region', '')}, {data.get('country_name', '')}",
-                    'timestamp': time.time(),
-                    'source': 'ip_geolocation'
-                }
-        except Exception as e:
-            st.warning(f"IP geolocation failed: {str(e)}")
-
-        # Final fallback to default location
-        return {
-            'lat': 17.537348,
-            'lng': 78.384515,
-            'city': 'Hyderabad',
-            'region': 'Telangana',
-            'country': 'India',
-            'postal_code': '500090',
-            'accuracy': 1000,
-            'formatted_address': 'G9XV+4WX, Bachupally, Hyderabad, Telangana 500090, India',
-            'timestamp': time.time(),
-            'source': 'default'
-        }
-
-    except Exception as e:
-        st.error(f"Error getting location: {str(e)}")
-        return None
-
 def track_location_changes(previous_location, current_location, threshold_meters=50):
     """
     Track significant location changes
@@ -320,3 +321,135 @@ def calculate_movement_metrics(previous_location, current_location):
             }
     except Exception:
         return None
+
+def get_emergency_contacts():
+    """
+    Retrieve emergency contact numbers based on location
+    """
+    emergency_contacts = {
+        'Police': '100',
+        'Ambulance': '108',
+        'Fire': '101',
+        'Women Helpline': '1091',
+        'Child Helpline': '1098',
+        'National Emergency': '112'
+    }
+    return emergency_contacts
+
+def initialize_session_state():
+    """
+    Initialize Streamlit session state variables
+    """
+    if 'previous_location' not in st.session_state:
+        st.session_state.previous_location = None
+    if 'current_location' not in st.session_state:
+        st.session_state.current_location = None
+    if 'tracking_enabled' not in st.session_state:
+        st.session_state.tracking_enabled = False
+    if 'emergency_mode' not in st.session_state:
+        st.session_state.emergency_mode = False
+    if 'selected_emergency_service' not in st.session_state:
+        st.session_state.selected_emergency_service = None
+
+def main():
+    """
+    Main application function
+    """
+    st.set_page_config(page_title="Urban Safety App", page_icon="🚨", layout="wide")
+    
+    # Initialize session state
+    initialize_session_state()
+    
+    # Application header
+    st.title("Urban Safety Application")
+    st.markdown("Stay safe with real-time location tracking and emergency services")
+    
+    # Sidebar controls
+    with st.sidebar:
+        st.header("Settings")
+        tracking_toggle = st.toggle("Enable Location Tracking", value=st.session_state.tracking_enabled)
+        
+        if tracking_toggle != st.session_state.tracking_enabled:
+            st.session_state.tracking_enabled = tracking_toggle
+            if tracking_toggle:
+                st.success("Location tracking enabled")
+            else:
+                st.warning("Location tracking disabled")
+        
+        st.header("Emergency Contacts")
+        emergency_contacts = get_emergency_contacts()
+        for service, number in emergency_contacts.items():
+            st.button(f"📞 {service}: {number}")
+    
+    # Main content area
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Your Location")
+        if st.session_state.tracking_enabled:
+            # Get current location
+            current_location = get_precise_location()
+            
+            if current_location:
+                st.success(f"Location: {current_location['formatted_address']}")
+                
+                # Update location history
+                if st.session_state.current_location:
+                    st.session_state.previous_location = st.session_state.current_location
+                st.session_state.current_location = current_location
+                
+                # Show movement metrics if available
+                if st.session_state.previous_location:
+                    metrics = calculate_movement_metrics(
+                        st.session_state.previous_location,
+                        st.session_state.current_location
+                    )
+                    if metrics:
+                        st.info(f"Speed: {metrics['speed']:.2f} m/s\n"
+                               f"Distance: {metrics['distance']:.2f} m")
+            else:
+                st.error("Could not get location. Using default location.")
+                current_location = get_default_location()
+        else:
+            st.warning("Location tracking is disabled")
+    
+    with col2:
+        st.subheader("Weather Conditions")
+        if st.session_state.current_location:
+            weather_data = get_weather(st.session_state.current_location)
+            if weather_data:
+                st.write(f"Temperature: {weather_data['temperature']}°C")
+                st.write(f"Humidity: {weather_data['humidity']}%")
+                st.write(f"Conditions: {weather_data['description']}")
+                st.write(f"Wind Speed: {weather_data['wind_speed']} m/s")
+    
+    # Emergency services section
+    st.subheader("Nearby Emergency Services")
+    if st.session_state.current_location:
+        nearby_services = get_nearby_support_locations(st.session_state.current_location)
+        
+        if nearby_services:
+            for service in nearby_services:
+                with st.expander(f"{service['name']} ({service['type'].replace('_', ' ').title()})"):
+                    st.write(f"Address: {service['address']}")
+                    st.write(f"Rating: {service['rating']}")
+                    if st.button(f"Get Directions to {service['name']}", key=service['place_id']):
+                        route = get_route_to_location(
+                            st.session_state.current_location,
+                            {'lat': service['lat'], 'lng': service['lng']}
+                        )
+                        if route:
+                            st.write(f"Distance: {route['distance']}")
+                            st.write(f"Duration: {route['duration']}")
+                            for step in route['steps']:
+                                st.write(f"- {step['instruction']}")
+                            
+                            # Show risk zones along route
+                            risk_zones = get_risk_zones(route['coordinates'])
+                            if risk_zones:
+                                st.warning("Risk Zones Detected:")
+                                for zone in risk_zones:
+                                    st.write(f"- {zone['description']} ({zone['risk_level']} risk)")
+
+if __name__ == "__main__":
+    main()
