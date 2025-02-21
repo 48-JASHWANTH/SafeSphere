@@ -380,6 +380,74 @@ def notify_user(message):
 
 def main():
     try:
+        # Add geolocation JavaScript
+        st.markdown("""
+            <script>
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        const accuracy = position.coords.accuracy;
+                        
+                        // Store in localStorage
+                        localStorage.setItem('user_lat', lat);
+                        localStorage.setItem('user_lng', lng);
+                        localStorage.setItem('location_accuracy', accuracy);
+                        
+                        // Reload page with parameters
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('lat', lat);
+                        url.searchParams.set('lng', lng);
+                        url.searchParams.set('accuracy', accuracy);
+                        window.location.href = url.toString();
+                    },
+                    function(error) {
+                        console.error("Error getting location:", error);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 5000,
+                        maximumAge: 0
+                    }
+                );
+            }
+            </script>
+        """, unsafe_allow_html=True)
+
+        # Get location from URL parameters
+        query_params = st.experimental_get_query_params()
+        if 'lat' in query_params and 'lng' in query_params:
+            lat = float(query_params['lat'][0])
+            lng = float(query_params['lng'][0])
+            accuracy = float(query_params.get('accuracy', [1000])[0])
+            
+            # Update session state with browser location
+            st.session_state.user_location = {
+                'lat': lat,
+                'lng': lng,
+                'accuracy': accuracy,
+                'source': 'browser_geolocation',
+                'timestamp': time_module.time()
+            }
+            
+            # Get additional location details using reverse geocoding
+            try:
+                geolocator = Nominatim(user_agent="my_safety_app")
+                location = geolocator.reverse(f"{lat}, {lng}", language='en')
+                
+                if location and location.raw:
+                    address = location.raw.get('address', {})
+                    st.session_state.user_location.update({
+                        'city': address.get('city', address.get('town', address.get('village', 'Unknown'))),
+                        'region': address.get('state', 'Unknown'),
+                        'country': address.get('country', 'Unknown'),
+                        'postal_code': address.get('postcode', 'Unknown'),
+                        'formatted_address': location.address
+                    })
+            except Exception as e:
+                st.warning(f"Error getting location details: {str(e)}")
+
         # Sidebar
         st.sidebar.title("🚨 Safety Dashboard")
         current_location = update_location()

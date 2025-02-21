@@ -196,15 +196,17 @@ def get_precise_location():
     Get precise user location using multiple methods
     """
     try:
-        # First try Google Maps Geolocation API
+        # Check if we already have browser location in session state
+        if st.session_state.get('user_location'):
+            return st.session_state.user_location
+
+        # Try Google Maps Geolocation API
         if gmaps:
             try:
-                # Basic geolocation request
                 response = gmaps.geolocate()
-                
                 if response and 'location' in response:
                     location = response['location']
-                    accuracy = min(response.get('accuracy', 1000), 1000)  # Cap accuracy at 1000m
+                    accuracy = min(response.get('accuracy', 1000), 1000)
                     
                     # Get detailed address using reverse geocoding
                     reverse_geocode = gmaps.reverse_geocode((location['lat'], location['lng']))
@@ -213,27 +215,18 @@ def get_precise_location():
                         address_components = reverse_geocode[0]['address_components']
                         formatted_address = reverse_geocode[0].get('formatted_address', '')
                         
-                        # Extract detailed location information
-                        city = next((comp['long_name'] for comp in address_components 
-                                   if 'locality' in comp['types']), 'Unknown')
-                        sublocality = next((comp['long_name'] for comp in address_components 
-                                          if 'sublocality' in comp['types']), '')
-                        region = next((comp['long_name'] for comp in address_components 
-                                     if 'administrative_area_level_1' in comp['types']), 'Unknown')
-                        country = next((comp['long_name'] for comp in address_components 
-                                     if 'country' in comp['types']), 'Unknown')
-                        postal_code = next((comp['long_name'] for comp in address_components 
-                                         if 'postal_code' in comp['types']), 'Unknown')
-                        
                         return {
                             'lat': location['lat'],
                             'lng': location['lng'],
                             'accuracy': accuracy,
-                            'city': city,
-                            'sublocality': sublocality,
-                            'region': region,
-                            'country': country,
-                            'postal_code': postal_code,
+                            'city': next((comp['long_name'] for comp in address_components 
+                                        if 'locality' in comp['types']), 'Unknown'),
+                            'region': next((comp['long_name'] for comp in address_components 
+                                          if 'administrative_area_level_1' in comp['types']), 'Unknown'),
+                            'country': next((comp['long_name'] for comp in address_components 
+                                          if 'country' in comp['types']), 'Unknown'),
+                            'postal_code': next((comp['long_name'] for comp in address_components 
+                                              if 'postal_code' in comp['types']), 'Unknown'),
                             'formatted_address': formatted_address,
                             'timestamp': time.time(),
                             'source': 'google_maps'
@@ -253,7 +246,7 @@ def get_precise_location():
                     'region': data.get('region', 'Unknown'),
                     'country': data.get('country_name', 'Unknown'),
                     'postal_code': data.get('postal', 'Unknown'),
-                    'accuracy': 1000,  # Limit accuracy for IP-based location
+                    'accuracy': 1000,
                     'formatted_address': f"{data.get('city', '')}, {data.get('region', '')}, {data.get('country_name', '')}",
                     'timestamp': time.time(),
                     'source': 'ip_geolocation'
@@ -261,19 +254,7 @@ def get_precise_location():
         except Exception as e:
             st.warning(f"IP geolocation failed: {str(e)}")
 
-        # Final fallback to default location
-        return {
-            'lat': 40.7128,
-            'lng': -74.0060,
-            'city': 'New York',
-            'region': 'New York',
-            'country': 'United States',
-            'postal_code': '10001',
-            'accuracy': 1000,
-            'formatted_address': 'New York, NY, USA',
-            'timestamp': time.time(),
-            'source': 'default'
-        }
+        return None
 
     except Exception as e:
         st.error(f"Error getting location: {str(e)}")
