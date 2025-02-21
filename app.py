@@ -521,26 +521,91 @@ def main():
                         zoom_start=13
                     )
                     
-                    # Add current location marker
-                    folium.Marker(
-                        [current_location['lat'], current_location['lng']],
+                    # Add fullscreen control
+                    plugins.Fullscreen(
+                        position='topleft',
+                        title='Expand map',
+                        title_cancel='Exit fullscreen',
+                        force_separate_button=True
+                    ).add_to(safety_map)
+                    
+                    # Add locate control for recentering (only once)
+                    plugins.LocateControl(
+                        position='topleft',
+                        strings={'title': 'Recenter map on your location'},
+                        locateOptions={
+                            'enableHighAccuracy': True,
+                            'maxZoom': 15
+                        }
+                    ).add_to(safety_map)
+                    
+                    # Add current location marker (removed duplicate LocateControl)
+                    folium.CircleMarker(
+                        location=[current_location['lat'], current_location['lng']],
+                        radius=8,
+                        color='red',
+                        fill=True,
                         popup='Your Location',
-                        icon=folium.Icon(color='red', icon='info-sign'),
                         tooltip='You are here'
+                    ).add_to(safety_map)
+                    
+                    # Add accuracy circle
+                    folium.Circle(
+                        location=[current_location['lat'], current_location['lng']],
+                        radius=current_location.get('accuracy', 1000),
+                        color='red',
+                        fill=True,
+                        fillColor='red',
+                        fillOpacity=0.1,
+                        popup='Location Accuracy Range'
                     ).add_to(safety_map)
                     
                     # Add support locations to map
                     if support_locations:
                         for location in support_locations:
+                            # Create custom icon for support locations
+                            icon_color = {
+                                'Hospital': 'red',
+                                'Police Station': 'blue',
+                                'Fire Station': 'orange',
+                                'Shelter': 'green'
+                            }.get(location['type'], 'green')
+                            
                             folium.Marker(
                                 [location['lat'], location['lng']],
-                                popup=f"{location['name']} ({location['type']})",
-                                icon=folium.Icon(color='green', icon='info-sign'),
-                                tooltip=location['name']
+                                popup=folium.Popup(
+                                    f"""
+                                    <div style='width: 200px'>
+                                        <h4>{location['name']}</h4>
+                                        <p><strong>Type:</strong> {location['type']}</p>
+                                        <p><strong>Distance:</strong> {location.get('distance', 'N/A')} meters</p>
+                                        <p><strong>Status:</strong> {location.get('status', 'Open')}</p>
+                                    </div>
+                                    """,
+                                    max_width=300
+                                ),
+                                icon=folium.Icon(color=icon_color, icon='info-sign'),
+                                tooltip=f"{location['name']} ({location['type']})"
                             ).add_to(safety_map)
+                    
+                    # Add map layers control
+                    folium.LayerControl().add_to(safety_map)
                     
                     # Display the map
                     folium_static(safety_map)
+                    
+                    # Add map controls explanation
+                    st.markdown("""
+                        <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px; margin: 10px 0;'>
+                            <h4 style='color: white; margin: 0;'>Map Controls</h4>
+                            <ul style='color: #cccccc; margin: 10px 0;'>
+                                <li>🔍 Click the locate button to recenter the map on your location</li>
+                                <li>⛶ Use the fullscreen button to expand the map</li>
+                                <li>📍 Click on markers to see detailed information</li>
+                                <li>🎯 Use the layers control to show/hide different map features</li>
+                            </ul>
+                        </div>
+                    """, unsafe_allow_html=True)
                 
                 # Rest of the destination selection and route display
                 if support_locations and len(support_locations) > 0:
@@ -599,31 +664,31 @@ def main():
                         'earthquake': '🌋',
                         'traffic': '🚗'
                     }
+                
+                for alert in alerts:
+                    alert_icon = alert_types.get(alert['type'], '⚠️')
                     
-                    for alert in alerts:
-                        alert_icon = alert_types.get(alert['type'], '⚠️')
-                        
-                        if alert['severity'] == 'high':
-                            st.markdown(f"""
-                                <div style='background-color: #ff4b4b; padding: 15px; border-radius: 10px; margin: 10px 0; color: white;'>
-                                    <strong>{alert_icon} {alert['type'].upper()}</strong><br>
-                                    {alert['message']}
-                                </div>
-                            """, unsafe_allow_html=True)
-                        elif alert['severity'] == 'medium':
-                            st.markdown(f"""
-                                <div style='background-color: #ffa500; padding: 15px; border-radius: 10px; margin: 10px 0; color: white;'>
-                                    <strong>{alert_icon} {alert['type'].upper()}</strong><br>
-                                    {alert['message']}
-                                </div>
-                            """, unsafe_allow_html=True)
-                        else:
-                            st.markdown(f"""
-                                <div style='background-color: #4CAF50; padding: 15px; border-radius: 10px; margin: 10px 0; color: white;'>
-                                    <strong>{alert_icon} {alert['type'].upper()}</strong><br>
-                                    {alert['message']}
-                                </div>
-                            """, unsafe_allow_html=True)
+                    if alert['severity'] == 'high':
+                        st.markdown(f"""
+                            <div style='background-color: #ff4b4b; padding: 15px; border-radius: 10px; margin: 10px 0; color: white;'>
+                                <strong>{alert_icon} {alert['type'].upper()}</strong><br>
+                                {alert['message']}
+                            </div>
+                        """, unsafe_allow_html=True)
+                    elif alert['severity'] == 'medium':
+                        st.markdown(f"""
+                            <div style='background-color: #ffa500; padding: 15px; border-radius: 10px; margin: 10px 0; color: white;'>
+                                <strong>{alert_icon} {alert['type'].upper()}</strong><br>
+                                {alert['message']}
+                            </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                            <div style='background-color: #4CAF50; padding: 15px; border-radius: 10px; margin: 10px 0; color: white;'>
+                                <strong>{alert_icon} {alert['type'].upper()}</strong><br>
+                                {alert['message']}
+                            </div>
+                        """, unsafe_allow_html=True)
                     
                     # Add auto-refresh functionality
                     st.markdown("""
