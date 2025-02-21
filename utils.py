@@ -1,30 +1,6 @@
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime
 from groq_api import get_risk_data
-
-def load_help_requests():
-    """
-    Load help requests from temporary storage
-    """
-    # In production, consider using a lightweight database
-    return []
-
-def save_help_request(request):
-    """
-    Save a new help request
-    """
-    if 'help_requests' not in st.session_state:
-        st.session_state.help_requests = []
-    
-    # Add request to session state
-    st.session_state.help_requests.append(request)
-    
-    # Remove requests older than 24 hours
-    current_time = datetime.now()
-    st.session_state.help_requests = [
-        req for req in st.session_state.help_requests
-        if datetime.fromisoformat(req['timestamp']) > current_time - timedelta(days=1)
-    ]
 
 def generate_heatmap_data(location):
     """
@@ -61,17 +37,6 @@ def generate_heatmap_data(location):
     except Exception as e:
         st.error(f"Error generating heatmap data: {str(e)}")
         return []
-
-def clean_old_requests():
-    """
-    Remove help requests older than 24 hours
-    """
-    if 'help_requests' in st.session_state:
-        current_time = datetime.now()
-        st.session_state.help_requests = [
-            req for req in st.session_state.help_requests
-            if datetime.fromisoformat(req['timestamp']) > current_time - timedelta(days=1)
-        ]
 
 def format_timestamp(timestamp_str):
     """

@@ -9,8 +9,14 @@ import random
 from geopy.distance import geodesic
 import time
 
-# Initialize Google Maps client
-gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))
+# Initialize Google Maps client - Add error handling
+try:
+    gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))
+    if not os.getenv('GOOGLE_MAPS_API_KEY'):
+        st.error("Google Maps API key is missing. Please check your .env file.")
+except Exception as e:
+    st.error(f"Error initializing Google Maps client: {str(e)}")
+    gmaps = None
 geolocator = Nominatim(user_agent="urban_safety_app")
 
 def get_user_location():
@@ -261,4 +267,4 @@ def calculate_movement_metrics(previous_location, current_location):
                 'time_elapsed': time_diff
             }
     except Exception:
-        return None 
+        return None

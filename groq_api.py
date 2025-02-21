@@ -5,7 +5,16 @@ import streamlit as st
 import random
 from datetime import datetime
 
-client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+# Initialize Groq client with error handling
+try:
+    groq_api_key = os.getenv('GROQ_API_KEY')
+    if not groq_api_key:
+        st.error("Groq API key is missing. Please check your .env file.")
+    client = Groq(api_key=groq_api_key)
+except Exception as e:
+    st.error(f"Error initializing Groq client: {str(e)}")
+    client = None
+
 analyzer = SentimentIntensityAnalyzer()
 
 def get_disaster_alerts(location):
