@@ -42,22 +42,8 @@ def get_user_location():
     """
     Get user's location using IP geolocation with default fallback
     """
-    try:
-        # First try IP-based geolocation
-        response = requests.get('https://ipapi.co/json/')
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                'lat': float(data['latitude']),
-                'lng': float(data['longitude']),
-                'city': data.get('city', 'Unknown'),
-                'region': data.get('region', 'Unknown'),
-                'country': data.get('country_name', 'Unknown')
-            }
-    except Exception as e:
-        st.warning(f"Could not get precise location: {str(e)}")
-        # Return default location
-        return get_default_location()
+    
+    return get_default_location()
 
 def get_precise_location():
     """
