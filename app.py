@@ -9,6 +9,7 @@ st.set_page_config(
 
 import folium
 from folium import plugins
+from folium.plugins import HeatMap
 from streamlit_folium import folium_static
 from datetime import datetime, time
 import pandas as pd
@@ -242,12 +243,134 @@ def update_location():
     
     return st.session_state.user_location
 
-def create_dynamic_heatmap(data):
-    """
-    Create a heatmap layer for risk visualization using Google Maps API.
-    """
-    heatmap_data = [[d['lat'], d['lng'], d['intensity']] for d in data]  # Prepare data for heatmap
-    return heatmap_data
+def create_dynamic_heatmap(heatmap_data, current_location):
+    """Create an interactive heatmap with tooltips and legend"""
+    try:
+        # Create base map centered on current location
+        center_lat = current_location['lat']
+        center_lng = current_location['lng']
+        
+        m = folium.Map(location=[center_lat, center_lng], zoom_start=13)
+        
+        # Add current location marker with pulsing effect
+        plugins.LocateControl().add_to(m)
+        plugins.Fullscreen().add_to(m)
+        
+        # Add a distinctive marker for current location
+        folium.Marker(
+            location=[center_lat, center_lng],
+            popup='Your Location',
+            icon=folium.Icon(color='red', icon='info-sign'),
+            tooltip='You are here'
+        ).add_to(m)
+        
+        # Add circle to show accuracy radius
+        folium.Circle(
+            location=[center_lat, center_lng],
+            radius=current_location.get('accuracy', 1000),
+            color='red',
+            fill=True,
+            fillColor='red',
+            fillOpacity=0.1,
+            popup='Location Accuracy Range'
+        ).add_to(m)
+        
+        # Add heatmap layer with gradient
+        gradient = {
+            0.2: '#00ff00',  # Low risk - Green
+            0.4: '#ffff00',  # Medium-low risk - Yellow
+            0.6: '#ffa500',  # Medium risk - Orange
+            0.8: '#ff4500',  # Medium-high risk - Orange-red
+            1.0: '#ff0000'   # High risk - Red
+        }
+        
+        # Prepare heatmap data
+        heat_data = [[point['lat'], point['lng'], point['intensity']] for point in heatmap_data]
+        
+        # Add heatmap layer
+        if heat_data:  # Only add heatmap if there's data
+            HeatMap(
+                data=heat_data,
+                radius=25,
+                gradient=gradient,
+                min_opacity=0.3,
+                max_zoom=18,
+            ).add_to(m)
+        
+        # Add legend
+        legend_html = """
+        <div style="position: fixed; 
+                    bottom: 50px; right: 50px; 
+                    background-color: white;
+                    border: 2px solid grey; 
+                    z-index: 1000;
+                    padding: 10px;
+                    border-radius: 5px;
+                    box-shadow: 3px 3px 3px rgba(0,0,0,0.3)">
+            <p style="text-align: center;"><b>Risk Level Legend</b></p>
+            <div style="display: flex; align-items: center; margin: 5px;">
+                <div style="width: 20px; height: 20px; background: #00ff00; margin-right: 5px;"></div>
+                <span>Low Risk</span>
+            </div>
+            <div style="display: flex; align-items: center; margin: 5px;">
+                <div style="width: 20px; height: 20px; background: #ffff00; margin-right: 5px;"></div>
+                <span>Medium-Low Risk</span>
+            </div>
+            <div style="display: flex; align-items: center; margin: 5px;">
+                <div style="width: 20px; height: 20px; background: #ffa500; margin-right: 5px;"></div>
+                <span>Medium Risk</span>
+            </div>
+            <div style="display: flex; align-items: center; margin: 5px;">
+                <div style="width: 20px; height: 20px; background: #ff4500; margin-right: 5px;"></div>
+                <span>Medium-High Risk</span>
+            </div>
+            <div style="display: flex; align-items: center; margin: 5px;">
+                <div style="width: 20px; height: 20px; background: #ff0000; margin-right: 5px;"></div>
+                <span>High Risk</span>
+            </div>
+        </div>
+        """
+        m.get_root().html.add_child(folium.Element(legend_html))
+        
+        # Add tooltips for each risk point
+        for point in heatmap_data:
+            risk_level = get_risk_level(point['intensity'])
+            tooltip_html = f"""
+                <div style="background-color: white; padding: 10px; border-radius: 5px;">
+                    <h4 style="margin: 0;">Risk Information</h4>
+                    <p style="margin: 5px 0;"><b>Risk Level:</b> {risk_level}</p>
+                    <p style="margin: 5px 0;"><b>Intensity:</b> {point['intensity']:.2f}</p>
+                    <p style="margin: 5px 0;"><b>Type:</b> {point.get('type', 'General Risk')}</p>
+                    <p style="margin: 5px 0;"><b>Description:</b> {point.get('description', 'Area of potential risk')}</p>
+                </div>
+            """
+            
+            folium.CircleMarker(
+                location=[point['lat'], point['lng']],
+                radius=1,
+                color="transparent",
+                fill=False,
+                popup=folium.Popup(tooltip_html, max_width=300),
+                tooltip="Click for details"
+            ).add_to(m)
+        
+        return m
+    except Exception as e:
+        st.error(f"Error creating heatmap: {str(e)}")
+        return folium.Map(location=[40.7128, -74.0060], zoom_start=10)  # Return default map on error
+
+def get_risk_level(intensity):
+    """Convert intensity value to risk level description"""
+    if intensity <= 0.2:
+        return "Low Risk"
+    elif intensity <= 0.4:
+        return "Medium-Low Risk"
+    elif intensity <= 0.6:
+        return "Medium Risk"
+    elif intensity <= 0.8:
+        return "Medium-High Risk"
+    else:
+        return "High Risk"
 
 def notify_user(message):
     """
@@ -475,16 +598,16 @@ def main():
                                     }
                                     .progress-indicator {
                                         text-align: center;
-                                        color: #00ff00;
+                                        color: #666;
                                         margin: 5px 0;
                                     }
                                     .arrival-indicator {
-                                        background-color: #006400;
+                                        background-color: #4CAF50;
                                         color: white;
-                                        padding: 15px;
-                                        border-radius: 10px;
-                                        margin-top: 20px;
+                                        padding: 10px;
+                                        border-radius: 5px;
                                         text-align: center;
+                                        margin-top: 10px;
                                     }
                                     </style>
                                 """, unsafe_allow_html=True)
@@ -494,36 +617,35 @@ def main():
                                 st.markdown(f"""
                                     <div class="journey-summary">
                                         <h4>Journey Summary</h4>
-                                        <p>
-                                            🛣️ Total Distance: <strong>{total_distance}</strong> &nbsp;&nbsp;|&nbsp;&nbsp;
-                                            ⏱️ Total Duration: <strong>{total_duration}</strong>
-                                        </p>
+                                        <p>🛣️ Total Distance: {total_distance}<br>
+                                        ⏱️ Estimated Time: {total_duration}</p>
                                     </div>
                                 """, unsafe_allow_html=True)
 
-                            for i, step in enumerate(route_info['steps'], 1):
-                                # Clean up HTML instructions
-                                instruction = step['instruction'].replace('<b>', '<strong>').replace('</b>', '</strong>')
-                                instruction = instruction.replace('<div style="font-size:0.9em">', '').replace('</div>', '')
+                                # Display each step
+                                for i, step in enumerate(route_info['steps'], 1):
+                                    # Clean up HTML instructions
+                                    instruction = step['instruction'].replace('<b>', '<strong>').replace('</b>', '</strong>')
+                                    instruction = instruction.replace('<div style="font-size:0.9em">', '').replace('</div>', '')
 
-                                st.markdown(f"""
-                                    <div class="route-step">
-                                        <span class="step-number">Step {i}</span>
-                                        <span class="step-duration">⏱️ {step['duration']}</span>
-                                        <span class="step-distance">🛣️ {step['distance']}</span>
-                                        <div class="step-instruction">{instruction}</div>
-                                    </div>
-                                """, unsafe_allow_html=True)
-
-                                # Add progress indicators between steps
-                                if i < len(route_info['steps']):
-                                    st.markdown("""
-                                        <div class="progress-indicator">
-                                            ↓
+                                    st.markdown(f"""
+                                        <div class="route-step">
+                                            <span class="step-number">Step {i}</span>
+                                            <span class="step-duration">⏱️ {step['duration']}</span>
+                                            <span class="step-distance">🛣️ {step['distance']}</span>
+                                            <div class="step-instruction">{instruction}</div>
                                         </div>
                                     """, unsafe_allow_html=True)
 
-                                # Add arrival indicator at the end
+                                    # Add progress indicators between steps (not after the last step)
+                                    if i < len(route_info['steps']):
+                                        st.markdown("""
+                                            <div class="progress-indicator">
+                                                ↓
+                                            </div>
+                                        """, unsafe_allow_html=True)
+
+                                # Add arrival indicator only once at the end
                                 st.markdown("""
                                     <div class="arrival-indicator">
                                         🏁 Arrival at Destination
@@ -581,6 +703,19 @@ def main():
 
         with tab2:
             st.header("📊 Risk Analysis")
+            
+            # Add explanation of the heatmap
+            st.markdown("""
+                <div style='background-color: #1e1e1e; padding: 15px; border-radius: 10px; margin: 10px 0;'>
+                    <h4 style='color: #00ff00; margin: 0;'>How to Read the Risk Heatmap</h4>
+                    <ul style='color: white; margin: 10px 0;'>
+                        <li>Colors indicate risk levels from green (low) to red (high)</li>
+                        <li>Hover over colored areas to see detailed risk information</li>
+                        <li>Click on points for additional details about specific risks</li>
+                        <li>Consider avoiding red zones during your journey</li>
+                    </ul>
+                </div>
+            """, unsafe_allow_html=True)
             
             # Fetch live data
             current_weather = get_current_weather(current_location)  # Fetch current weather
@@ -650,10 +785,8 @@ def main():
                         })
 
             # Create heatmap
-            heatmap = create_dynamic_heatmap(heatmap_data)
-            folium_map = folium.Map(location=[current_location['lat'], current_location['lng']], zoom_start=10)
-            plugins.HeatMap(heatmap).add_to(folium_map)
-            folium_static(folium_map)
+            heatmap = create_dynamic_heatmap(heatmap_data, current_location)
+            folium_static(heatmap)
 
             # Display nearby incidents with descriptions and precautions
             if nearby_incidents:
