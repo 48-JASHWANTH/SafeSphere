@@ -51,6 +51,9 @@ def get_nearby_support_locations(location):
     Get real nearby emergency services using Google Places API
     """
     try:
+        if not location:
+            return []
+            
         nearby_places = []
         
         # Search types for emergency services
@@ -85,7 +88,7 @@ def get_nearby_support_locations(location):
         return nearby_places
 
     except Exception as e:
-        st.error(f"Error fetching nearby locations: {str(e)}")
+        st.error(f"Error fetching support locations: {str(e)}")
         return []
 
 def get_route_to_location(origin, destination):

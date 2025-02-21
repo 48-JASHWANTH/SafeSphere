@@ -12,7 +12,7 @@ from folium import plugins
 from streamlit_folium import folium_static
 from datetime import datetime, time
 import pandas as pd
-from groq_api import get_disaster_alerts, analyze_risk_level, get_risk_insights
+from groq_api import get_disaster_alerts, analyze_risk_level, get_risk_insights, get_weather_alerts, get_traffic_incidents, get_seismic_activity, get_current_weather
 from maps import (
     get_nearby_support_locations, 
     get_weather, 
@@ -28,6 +28,8 @@ from dotenv import load_dotenv
 import os
 import requests
 import time as time_module
+from geopy.distance import geodesic
+from geopy.geocoders import Nominatim
 
 # Load environment variables
 load_dotenv()
@@ -228,86 +230,130 @@ def display_risk_insights(location):
 
 def update_location():
     """Update user location with improved tracking"""
-    current_time = time_module.time()
-    
-    # Check if enough time has passed since last update
-    if (current_time - st.session_state.last_location_check) < st.session_state.location_update_interval:
-        return st.session_state.user_location
-    
-    # Get precise location
-    new_location = get_precise_location()
-    if not new_location:
-        new_location = get_location()  # Fallback to IP-based location
-    
-    if new_location:
-        # Check if location has changed significantly
-        if track_location_changes(st.session_state.user_location, new_location):
-            # Calculate movement metrics if we have previous location
-            if st.session_state.user_location:
-                metrics = calculate_movement_metrics(
-                    st.session_state.user_location,
-                    new_location
-                )
-                if metrics:
-                    st.session_state.movement_metrics = metrics
-            
-            # Update location history
-            st.session_state.location_history.append({
-                'location': new_location,
-                'timestamp': datetime.now().isoformat()
-            })
-            
-            # Keep only last 100 locations
-            if len(st.session_state.location_history) > 100:
-                st.session_state.location_history = st.session_state.location_history[-100:]
-            
+    if not st.session_state.user_location:
+        # Get initial location
+        new_location = get_precise_location()
+        if not new_location:
+            new_location = get_location()  # Fallback to IP-based location
+        
+        if new_location:
             st.session_state.user_location = new_location
+            st.session_state.last_location_check = time_module.time()
     
-    st.session_state.last_location_check = current_time
     return st.session_state.user_location
+
+def create_dynamic_heatmap(data):
+    """
+    Create a heatmap layer for risk visualization using Google Maps API.
+    """
+    heatmap_data = [[d['lat'], d['lng'], d['intensity']] for d in data]  # Prepare data for heatmap
+    return heatmap_data
+
+def notify_user(message):
+    """
+    Notify the user about potential dangers.
+    """
+    st.warning(message)  # Example notification
 
 def main():
     try:
         # Sidebar
-        st.sidebar.title("🚨 Safety Dashboard")  # Updated title
-        
-        # Location tracking settings
-        st.sidebar.markdown("---")
-
-        # Display current location and tracking info
+        st.sidebar.title("🚨 Safety Dashboard")
         current_location = update_location()
+        
         if current_location:
             st.sidebar.markdown(f"📍 **Current Location:**")
             st.sidebar.markdown(f"City: {current_location['city']}")
             st.sidebar.markdown(f"Region: {current_location['region']}")
             st.sidebar.markdown(f"Accuracy: ±{current_location.get('accuracy', 'N/A')}m")
 
+            # Display weather information in sidebar
+            weather = get_weather(current_location)
+            if weather:
+                st.sidebar.markdown("---")
+                st.sidebar.markdown("🌤️ **Weather Report**")
+                
+                # Create a styled container for weather info
+                st.sidebar.markdown(
+                    f"""
+                    <div style='background-color: #1e1e1e; padding: 15px; border-radius: 10px; margin: 10px 0;'>
+                        <div style='color: #00ff00; font-size: 24px; margin-bottom: 10px;'>
+                            {weather['temperature']}°C
+                        </div>
+                        <div style='color: white; margin-bottom: 5px;'>
+                            {weather['description'].title()}
+                        </div>
+                        <hr style='border-color: #333333; margin: 10px 0;'>
+                        <div style='color: #cccccc;'>
+                            💧 Humidity: {weather['humidity']}%<br>
+                            💨 Wind Speed: {weather['wind_speed']} m/s
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                # Add weather alerts if any
+                weather_alerts = get_weather_alerts(current_location)
+                if weather_alerts:
+                    st.sidebar.markdown("⚠️ **Weather Alerts**")
+                    for alert in weather_alerts:
+                        st.sidebar.markdown(
+                            f"""
+                            <div style='background-color: #ff4b4b; padding: 10px; border-radius: 5px; margin: 5px 0; color: white;'>
+                                {alert['description']}
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+
         # Manual location override
         with st.sidebar.expander("Manual Location Override"):
-            new_lat = st.number_input("Latitude", value=current_location['lat'], format="%.6f")
-            new_lng = st.number_input("Longitude", value=current_location['lng'], format="%.6f")
-            if st.button("Update Location"):
-                st.session_state.user_location = {
-                    'lat': new_lat,
-                    'lng': new_lng,
-                    'city': current_location['city'],
-                    'region': current_location['region'],
-                    'country': current_location['country'],
-                    'timestamp': time_module.time()
-                }
-                st.rerun()
+            try:
+                default_lat = current_location['lat'] if current_location else 0.0
+                default_lng = current_location['lng'] if current_location else 0.0
+                
+                new_lat = st.number_input("Latitude", 
+                                         value=float(default_lat),
+                                         min_value=-90.0,
+                                         max_value=90.0,
+                                         format="%.6f")
+                new_lng = st.number_input("Longitude", 
+                                         value=float(default_lng),
+                                         min_value=-180.0,
+                                         max_value=180.0,
+                                         format="%.6f")
+                
+                if st.button("Update Location"):
+                    try:
+                        # Use geopy to get location details
+                        geolocator = Nominatim(user_agent="my_safety_app")
+                        location = geolocator.reverse(f"{new_lat}, {new_lng}", language='en')
+                        
+                        if location and location.raw:
+                            address = location.raw.get('address', {})
+                            
+                            # Update session state with new location
+                            st.session_state.user_location = {
+                                'lat': new_lat,
+                                'lng': new_lng,
+                                'city': address.get('city', address.get('town', address.get('village', 'Unknown'))),
+                                'region': address.get('state', 'Unknown'),
+                                'country': address.get('country', 'Unknown'),
+                                'timestamp': time_module.time(),
+                                'accuracy': 0
+                            }
+                            
+                            st.success("Location updated successfully!")
+                            st.rerun()
+                        else:
+                            st.error("Could not find location details. Please try different coordinates.")
+                    except Exception as e:
+                        st.error(f"Error updating location: {str(e)}")
+            except Exception as e:
+                st.error(f"Error in location input: {str(e)}")
 
-        # Display weather information
-        weather = get_weather(current_location)
-        if weather:
-            st.sidebar.markdown("---")
-            st.sidebar.markdown("🌤️ **Weather Conditions:**")
-            st.sidebar.markdown(f"Temperature: {weather['temperature']}°C")
-            st.sidebar.markdown(f"Humidity: {weather['humidity']}%")
-            st.sidebar.markdown(f"Conditions: {weather['description'].title()}")
-            st.sidebar.markdown(f"Wind Speed: {weather['wind_speed']} m/s")
-
-        # Main content area with tabs - removed Emergency tab
+        # Main content area with tabs
         tab1, tab2 = st.tabs(["📍 Live Map", "📊 Risk Analysis"])
         
         with tab1:
@@ -316,146 +362,149 @@ def main():
             with col1:
                 st.header("🗺 Safety Map")
                 
-                # Get support locations
+                # Get support locations with error handling
                 support_locations = get_nearby_support_locations(current_location)
                 
-                # Add location selector
-                st.markdown("### 🎯 Select Destination")
-                destination_options = [f"{loc['name']} ({loc['type']})" for loc in support_locations]
-                selected_index = st.selectbox(
-                    "Choose a destination",
-                    range(len(destination_options)),
-                    format_func=lambda x: destination_options[x]
-                )
-                
-                selected_destination = support_locations[selected_index]
-                st.session_state.selected_destination = selected_destination
-                
-                # Get and display route
-                if st.session_state.selected_destination:
-                    route_info = get_route_to_location(
-                        current_location,
-                        st.session_state.selected_destination
+                if support_locations and len(support_locations) > 0:
+                    # Add location selector
+                    st.markdown("### 🎯 Select Destination")
+                    destination_options = [f"{loc['name']} ({loc['type']})" for loc in support_locations]
+                    selected_index = st.selectbox(
+                        "Choose a destination",
+                        range(len(destination_options)),
+                        format_func=lambda x: destination_options[x]
                     )
-                    st.session_state.route_info = route_info
                     
-                    if route_info:
-                        st.markdown("### 🚗 Route Information")
-                        st.markdown(f"**Distance:** {route_info['distance']}")
-                        st.markdown(f"**Duration:** {route_info['duration']}")
-                        
-                        # Display route map
-                        route_map = create_route_map(
+                    selected_destination = support_locations[selected_index]
+                    st.session_state.selected_destination = selected_destination
+                    
+                    # Get and display route
+                    if st.session_state.selected_destination:
+                        route_info = get_route_to_location(
                             current_location,
-                            st.session_state.selected_destination,
-                            route_info
+                            st.session_state.selected_destination
                         )
-                        folium_static(route_map)
+                        st.session_state.route_info = route_info
                         
-                        # Display route steps
-                        with st.expander("📝 Route Steps", expanded=True):
-                            st.markdown("""
-                                <style>
-                                .route-step {
-                                    background-color: #1e1e1e;  /* Dark background */
-                                    padding: 15px;
-                                    border-radius: 10px;
-                                    margin: 10px 0;
-                                    border-left: 4px solid #00ff00;  /* Bright green border */
-                                    color: white;  /* White text */
-                                }
-                                .step-number {
-                                    color: #00ff00;  /* Bright green text */
-                                    font-size: 18px;
-                                    font-weight: bold;
-                                }
-                                .step-distance {
-                                    color: #cccccc;  /* Light grey text */
-                                    font-size: 14px;
-                                    float: right;
-                                }
-                                .step-duration {
-                                    color: #cccccc;  /* Light grey text */
-                                    font-size: 14px;
-                                    margin-left: 15px;
-                                    float: right;
-                                }
-                                .step-instruction {
-                                    margin-top: 5px;
-                                    font-size: 16px;
-                                    color: white;  /* White text */
-                                }
-                                .journey-summary {
-                                    background-color: #2d2d2d;  /* Darker grey background */
-                                    padding: 15px;
-                                    border-radius: 10px;
-                                    margin-bottom: 20px;
-                                    color: white;  /* White text */
-                                }
-                                .journey-summary h4 {
-                                    color: #00ff00;  /* Bright green text */
-                                    margin: 0;
-                                }
-                                .journey-summary p {
-                                    margin: 10px 0 0 0;
-                                    color: white;  /* White text */
-                                }
-                                .progress-indicator {
-                                    text-align: center;
-                                    color: #00ff00;  /* Bright green text */
-                                    margin: 5px 0;
-                                }
-                                .arrival-indicator {
-                                    background-color: #006400;  /* Dark green */
-                                    color: white;
-                                    padding: 15px;
-                                    border-radius: 10px;
-                                    margin-top: 20px;
-                                    text-align: center;
-                                }
-                                </style>
-                            """, unsafe_allow_html=True)
+                        if route_info:
+                            st.markdown("### 🚗 Route Information")
+                            st.markdown(f"**Distance:** {route_info['distance']}")
+                            st.markdown(f"**Duration:** {route_info['duration']}")
+                            
+                            # Display route map
+                            route_map = create_route_map(
+                                current_location,
+                                st.session_state.selected_destination,
+                                route_info
+                            )
+                            folium_static(route_map)
+                            
+                            # Display route steps
+                            with st.expander("📝 Route Steps", expanded=True):
+                                st.markdown("""
+                                    <style>
+                                    .route-step {
+                                        background-color: #1e1e1e;
+                                        padding: 15px;
+                                        border-radius: 10px;
+                                        margin: 10px 0;
+                                        border-left: 4px solid #00ff00;
+                                        color: white;
+                                    }
+                                    .step-number {
+                                        color: #00ff00;
+                                        font-size: 18px;
+                                        font-weight: bold;
+                                    }
+                                    .step-distance {
+                                        color: #cccccc;
+                                        font-size: 14px;
+                                        float: right;
+                                    }
+                                    .step-duration {
+                                        color: #cccccc;
+                                        font-size: 14px;
+                                        margin-left: 15px;
+                                        float: right;
+                                    }
+                                    .step-instruction {
+                                        margin-top: 5px;
+                                        font-size: 16px;
+                                        color: white;
+                                    }
+                                    .journey-summary {
+                                        background-color: #2d2d2d;
+                                        padding: 15px;
+                                        border-radius: 10px;
+                                        margin-bottom: 20px;
+                                        color: white;
+                                    }
+                                    .journey-summary h4 {
+                                        color: #00ff00;
+                                        margin: 0;
+                                    }
+                                    .journey-summary p {
+                                        margin: 10px 0 0 0;
+                                        color: white;
+                                    }
+                                    .progress-indicator {
+                                        text-align: center;
+                                        color: #00ff00;
+                                        margin: 5px 0;
+                                    }
+                                    .arrival-indicator {
+                                        background-color: #006400;
+                                        color: white;
+                                        padding: 15px;
+                                        border-radius: 10px;
+                                        margin-top: 20px;
+                                        text-align: center;
+                                    }
+                                    </style>
+                                """, unsafe_allow_html=True)
 
-                            total_distance = route_info['distance']
-                            total_duration = route_info['duration']
-                            st.markdown(f"""
-                                <div class="journey-summary">
-                                    <h4>Journey Summary</h4>
-                                    <p>
-                                        🛣️ Total Distance: <strong>{total_distance}</strong> &nbsp;&nbsp;|&nbsp;&nbsp;
-                                        ⏱️ Total Duration: <strong>{total_duration}</strong>
-                                    </p>
-                                </div>
-                            """, unsafe_allow_html=True)
-
-                            for i, step in enumerate(route_info['steps'], 1):
-                                # Clean up HTML instructions
-                                instruction = step['instruction'].replace('<b>', '<strong>').replace('</b>', '</strong>')
-                                instruction = instruction.replace('<div style="font-size:0.9em">', '').replace('</div>', '')
-
+                                total_distance = route_info['distance']
+                                total_duration = route_info['duration']
                                 st.markdown(f"""
-                                    <div class="route-step">
-                                        <span class="step-number">Step {i}</span>
-                                        <span class="step-duration">⏱️ {step['duration']}</span>
-                                        <span class="step-distance">🛣️ {step['distance']}</span>
-                                        <div class="step-instruction">{instruction}</div>
+                                    <div class="journey-summary">
+                                        <h4>Journey Summary</h4>
+                                        <p>
+                                            🛣️ Total Distance: <strong>{total_distance}</strong> &nbsp;&nbsp;|&nbsp;&nbsp;
+                                            ⏱️ Total Duration: <strong>{total_duration}</strong>
+                                        </p>
                                     </div>
                                 """, unsafe_allow_html=True)
 
-                                # Add progress indicators between steps
-                                if i < len(route_info['steps']):
-                                    st.markdown("""
-                                        <div class="progress-indicator">
-                                            ↓
+                                for i, step in enumerate(route_info['steps'], 1):
+                                    # Clean up HTML instructions
+                                    instruction = step['instruction'].replace('<b>', '<strong>').replace('</b>', '</strong>')
+                                    instruction = instruction.replace('<div style="font-size:0.9em">', '').replace('</div>', '')
+
+                                    st.markdown(f"""
+                                        <div class="route-step">
+                                            <span class="step-number">Step {i}</span>
+                                            <span class="step-duration">⏱️ {step['duration']}</span>
+                                            <span class="step-distance">🛣️ {step['distance']}</span>
+                                            <div class="step-instruction">{instruction}</div>
                                         </div>
                                     """, unsafe_allow_html=True)
 
-                            # Add arrival indicator at the end
-                            st.markdown("""
-                                <div class="arrival-indicator">
-                                    🏁 Arrival at Destination
-                                </div>
-                            """, unsafe_allow_html=True)
+                                    # Add progress indicators between steps
+                                    if i < len(route_info['steps']):
+                                        st.markdown("""
+                                            <div class="progress-indicator">
+                                                ↓
+                                            </div>
+                                        """, unsafe_allow_html=True)
+
+                                # Add arrival indicator at the end
+                                st.markdown("""
+                                    <div class="arrival-indicator">
+                                        🏁 Arrival at Destination
+                                    </div>
+                                """, unsafe_allow_html=True)
+                else:
+                    st.warning("No support locations found in your area. Please try a different location or refresh the page.")
             
             with col2:
                 st.header("🚨 Live Alerts")
@@ -472,22 +521,93 @@ def main():
         with tab2:
             st.header("📊 Risk Analysis")
             
-            # Display risk heatmap
-            risk_data = generate_heatmap_data(current_location)
-            risk_map = create_risk_heatmap(current_location, risk_data)
-            folium_static(risk_map)
-            
-            # Display risk metrics
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Current Risk Level", st.session_state.risk_level.upper())
-            with col2:
-                st.metric("Active Alerts", len(alerts))
-            with col3:
-                st.metric("Nearby Safe Zones", len(support_locations))
-            
-            # Display detailed risk insights
-            display_risk_insights(current_location)
+            # Fetch live data
+            current_weather = get_current_weather(current_location)  # Fetch current weather
+            weather_alerts = get_weather_alerts(current_location)
+            traffic_incidents = get_traffic_incidents(current_location)
+            seismic_activity = get_seismic_activity()
+
+            # Check if it is currently raining
+            if current_weather and 'weather' in current_weather:
+                is_raining = any(condition['main'].lower() == 'rain' for condition in current_weather['weather'])
+                rain_status = "It is currently raining." if is_raining else "It is not raining."
+                st.markdown(f"<div style='background-color: #4CAF50; padding: 10px; border-radius: 5px; margin: 5px 0;'>"
+                            f"<strong>Weather Status:</strong> {rain_status}</div>", unsafe_allow_html=True)
+
+            # Define a function to calculate distance
+            def calculate_distance(lat1, lon1, lat2, lon2):
+                return geodesic((lat1, lon1), (lat2, lon2)).meters
+
+            # Prepare data for heatmap and filter incidents
+            heatmap_data = []
+            nearby_incidents = []
+            radius = 5000  # 5 km radius for filtering incidents
+
+            # Process weather alerts for rain
+            rain_alerts = [alert for alert in weather_alerts if 'rain' in alert['event'].lower()]
+
+            if rain_alerts:
+                for alert in rain_alerts:
+                    st.markdown(f"<div style='background-color: #ff4b4b; padding: 10px; border-radius: 5px; margin: 5px 0;'>"
+                                f"<strong>Weather Alert:</strong> {alert['description']}</div>", unsafe_allow_html=True)
+
+            # Process traffic incidents
+            if traffic_incidents:
+                for incident in traffic_incidents[:4]:  # Limit to first 4 incidents
+                    incident_lat = incident['geometry']['location']['lat']
+                    incident_lng = incident['geometry']['location']['lng']
+                    distance = calculate_distance(current_location['lat'], current_location['lng'], incident_lat, incident_lng)
+                    if distance <= radius:
+                        nearby_incidents.append({
+                            'type': 'Traffic Incident',
+                            'description': incident['name'],
+                            'distance': distance,
+                            'precautions': "Avoid the area if possible and follow detour signs."
+                        })
+                        heatmap_data.append({
+                            'lat': incident_lat,
+                            'lng': incident_lng,
+                            'intensity': 1  # Example intensity
+                        })
+
+            if seismic_activity:
+                for quake in seismic_activity:
+                    quake_lat = quake['geometry']['coordinates'][1]
+                    quake_lng = quake['geometry']['coordinates'][0]
+                    distance = calculate_distance(current_location['lat'], current_location['lng'], quake_lat, quake_lng)
+                    if distance <= radius:
+                        nearby_incidents.append({
+                            'type': 'Earthquake',
+                            'description': f"Magnitude {quake['properties']['mag']} at {quake['properties']['place']}",
+                            'distance': distance,
+                            'precautions': "Drop, Cover, and Hold On. Stay away from windows."
+                        })
+                        heatmap_data.append({
+                            'lat': quake_lat,
+                            'lng': quake_lng,
+                            'intensity': 1  # Example intensity
+                        })
+
+            # Create heatmap
+            heatmap = create_dynamic_heatmap(heatmap_data)
+            folium_map = folium.Map(location=[current_location['lat'], current_location['lng']], zoom_start=10)
+            plugins.HeatMap(heatmap).add_to(folium_map)
+            folium_static(folium_map)
+
+            # Display nearby incidents with descriptions and precautions
+            if nearby_incidents:
+                st.subheader("⚠️ Nearby Incidents")
+                for incident in nearby_incidents:
+                    st.markdown(f"<div style='background-color: #ff4b4b; padding: 10px; border-radius: 5px; margin: 5px 0;'>"
+                                f"<strong>{incident['type']}</strong>: {incident['description']}<br>"
+                                f"Distance: {incident['distance']:.2f} meters<br>"
+                                f"<em>Precautions: {incident['precautions']}</em></div>", unsafe_allow_html=True)
+            else:
+                st.success("No nearby incidents at this time.")
+
+            # Refresh button for live data
+            if st.button("Refresh Data"):
+                st.rerun()
 
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")

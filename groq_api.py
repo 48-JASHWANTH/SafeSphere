@@ -4,6 +4,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import streamlit as st
 import random
 from datetime import datetime
+import requests
 
 # Initialize Groq client with error handling
 try:
@@ -178,4 +179,69 @@ def get_risk_data(location):
         return risk_points
     except Exception as e:
         st.error(f"Error generating risk data: {str(e)}")
-        return [] 
+        return []
+
+def get_weather_alerts(location):
+    """
+    Fetch real-time weather alerts for a given location using OpenWeatherMap API.
+    """
+    api_key = os.getenv('OPENWEATHER_API_KEY')
+    lat = location['lat']
+    lon = location['lng']
+    url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}"
+
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('alerts', [])
+    except Exception as e:
+        return []
+
+def get_traffic_incidents(location):
+    """
+    Fetch real-time traffic incidents using Google Maps API.
+    """
+    api_key = os.getenv('GOOGLE_MAPS_API_KEY')
+    lat = location['lat']
+    lon = location['lng']
+    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lon}&radius=5000&type=traffic&key={api_key}"
+
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('results', [])
+    except Exception as e:
+        return []
+
+def get_seismic_activity():
+    """
+    Fetch real-time seismic activity data from USGS.
+    """
+    url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
+
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            return data['features']
+    except Exception as e:
+        return []
+
+def get_current_weather(location):
+    """
+    Fetch current weather data for a given location using OpenWeatherMap API.
+    """
+    api_key = os.getenv('OPENWEATHER_API_KEY')
+    lat = location['lat']
+    lon = location['lng']
+    url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric"
+
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            return data  # Return the entire weather data
+    except Exception as e:
+        return None 
